@@ -36,7 +36,7 @@ character(len=40) :: namefile
 ! Code variables
 
 ! Enable or disable phase field (acceleration eneabled by default)
-#define phiflag 1
+#define phiflag 0
 
 !########################################################################################################################################
 ! 1. INITIALIZATION OF MPI AND cuDECOMP AUTOTUNING : START
@@ -188,7 +188,7 @@ allocate(rhsu_o(piX%shape(1),piX%shape(2),piX%shape(3)),rhsv_o(piX%shape(1),piX%
 allocate(div(piX%shape(1),piX%shape(2),piX%shape(3)))
 !PFM variables
 #if phiflag == 1
-allocate(phi(piX%shape(1),piX%shape(2),piX%shape(3)),rhsphi(piX%shape(1),piX%shape(2),piX%shape(3)))
+allocate(phi(piX%shape(1),piX%shape(2),piX%shape(3)),rhsphi(piX%shape(1),piX%shape(2),piX%shape(3)),rhsphi_o(piX%shape(1),piX%shape(2),piX%shape(3)))
 allocate(psidi(piX%shape(1),piX%shape(2),piX%shape(3)))
 allocate(normx(piX%shape(1),piX%shape(2),piX%shape(3)),normy(piX%shape(1),piX%shape(2),piX%shape(3)),normz(piX%shape(1),piX%shape(2),piX%shape(3)))
 allocate(chempot(piX%shape(1),piX%shape(2),piX%shape(3)),gradphix(piX%shape(1),piX%shape(2),piX%shape(3)),gradphiy(piX%shape(1),piX%shape(2),piX%shape(3)),gradphiz(piX%shape(1),piX%shape(2),piX%shape(3)))
@@ -468,12 +468,12 @@ do t=tstart,tfin
     enddo
     !$acc end kernels
 
-   ! 4.2 Get phi at n+1 
+   ! 4.2 Get phi at n+1 using AB2
    !$acc kernels
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
             do i=1,nx
-                phi(i,j,k) = phi(i,j,k) + dt*rhsphi(i,j,k)
+                phi(i,j,k) = phi(i,j,k) + dt*(alpha*rhsphi(i,j,k)-beta*rhsphi_o(i,j,k))
             enddo
         enddo
     enddo
@@ -486,7 +486,7 @@ do t=tstart,tfin
    !$acc end host_data 
    #endif
    !########################################################################################################################################
-   ! END STEP 4: PHASE-FIELD SOLVER (EXPLICIT)
+   ! END STEP 4: PHASE-FIELD SOLVER 
    !########################################################################################################################################
    call nvtxEndRange
 
@@ -588,9 +588,9 @@ do t=tstart,tfin
          jg = piX%lo(2) + j - 1 
          do i = 1, piX%shape(1)
             ! ABC forcing
-            rhsu(i,j,k)= rhsu(i,j,k) + f3*sin(k0*x(kg))+f2*cos(k0*x(jg))
-            rhsv(i,j,k)= rhsv(i,j,k) + f1*sin(k0*x(i))+f3*cos(k0*x(kg))
-            rhsw(i,j,k)= rhsw(i,j,k) + f2*sin(k0*x(jg))+f1*cos(k0*x(i))
+            rhsu(i,j,k)= rhsu(i,j,k) + f3*sin(k0*(x(kg)+dx/2))+f2*cos(k0*(x(jg)+dx/2))
+            rhsv(i,j,k)= rhsv(i,j,k) + f1*sin(k0*(x(i) +dx/2))+f3*cos(k0*(x(kg)+dx/2))
+            rhsw(i,j,k)= rhsw(i,j,k) + f2*sin(k0*(x(jg)+dx/2))+f1*cos(k0*(x(i) +dx/2))
             ! TG Forcing
             !rhsu(i,j,k)= rhsu(i,j,k) + f1*sin(k0*x(i))*cos(k0*x(j))*cos(k0*x(k))
             !rhsv(i,j,k)= rhsv(i,j,k) - f1*cos(k0*x(i))*sin(k0*x(j))*sin(k0*x(k))
@@ -673,9 +673,9 @@ do t=tstart,tfin
 
    ! store rhs* in rhs*_o 
    ! After first step move to AB2 
-   !$acc kernels
    alpha=1.5d0
    beta= 0.5d0
+   !$acc kernels
    rhsu_o=rhsu
    rhsv_o=rhsv
    rhsw_o=rhsw
@@ -782,7 +782,7 @@ do t=tstart,tfin
    yoff = offsets(2)
    npx = np(1)
    npy = np(2)
-   !$cuf kernel do (2)
+   !$acc kernels
    do jl = 1, npy
       do il = 1, npx
          jg = yoff + jl
@@ -793,7 +793,8 @@ do t=tstart,tfin
          enddo
       enddo
    enddo
-
+   !$acc end kernels
+ 
    ! specify mean (corrects division by zero wavenumber above)
    if (xoff == 0 .and. yoff == 0) psi3d(1,1,1) = 0.0
    end block
@@ -809,16 +810,18 @@ do t=tstart,tfin
    ! psi(y,z,kx) -> psi(kx,y,z)
    CHECK_CUDECOMP_EXIT(cudecompTransposeYToX(handle, grid_desc, psi_d, psi_d, work_d, CUDECOMP_DOUBLE_COMPLEX, [0,0,0], Pix%halo_extents))
    ! psi(kx,y,z) -> psi(x,y,z)
-   status = cufftExecZ2Z(planX, psi_d, psi_d, CUFFT_INVERSE)
+   !$acc host_data use_device(rhsp_complex)
+   status = cufftExecZ2Z(planX, psi_d, rhsp_complex, CUFFT_INVERSE)
    if (status /= CUFFT_SUCCESS) write(*,*) 'X inverse error: ', status
+   !$acc end host_data
 
    ! update halo nodes with pressure (needed for the pressure correction step), using device variable no need to use host-data
    ! Update X-pencil halos in Y and Z direction
-   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, psi_d, work_halo_d, CUDECOMP_DOUBLE_COMPLEX, piX%halo_extents, halo_periods, 2))
-   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, psi_d, work_halo_d, CUDECOMP_DOUBLE_COMPLEX, piX%halo_extents, halo_periods, 3))
+   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, rhsp_complex, work_halo_d, CUDECOMP_DOUBLE_COMPLEX, piX%halo_extents, halo_periods, 2))
+   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, rhsp_complex, work_halo_d, CUDECOMP_DOUBLE_COMPLEX, piX%halo_extents, halo_periods, 3))
 
    !D2H transfer
-   psi = psi_d
+   !psi = psi_d
 
 
    ! check against analytical solution
@@ -843,13 +846,12 @@ do t=tstart,tfin
    do kl = 1, piX%shape(3)
       do jl = 1, piX%shape(2)
          do i = 1, piX%shape(1)
-            p(i,jl,kl) = real(psi3(i,jl,kl))
+            p(i,jl,kl) = real(rhsp_complex(i,jl,kl))
          enddo
       enddo
    enddo
    !$acc end kernels
 
-   !write(*,"(' [', i0, '] Max Error: ', e12.6)") rank, maxErr
    end block
 
    !########################################################################################################################################
@@ -946,7 +948,7 @@ do t=tstart,tfin
    endif
 
    call cpu_time(timef)
-   if (rank.eq.0) print '(" Time elapsed = ",f6.1," ms")',1000*(timef-times)
+   if (rank.eq.0) print '(" Time elapsed = ",f8.1," ms")',1000*(timef-times)
    !########################################################################################################################################
    ! END STEP 8: VELOCITY CORRECTION  
    !########################################################################################################################################
@@ -976,11 +978,10 @@ do t=tstart,tfin
 
 enddo
 
-! Remove allocated variables (add new)
 deallocate(u,v,w)
 deallocate(rhsu,rhsv,rhsw)
 deallocate(rhsu_o,rhsv_o,rhsw_o)
-deallocate(phi,rhsphi,normx,normy,normz)
+deallocate(phi,rhsphi,rhsphi_o,normx,normy,normz)
 
 call mpi_finalize(ierr)
 
