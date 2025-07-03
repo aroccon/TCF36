@@ -59,12 +59,8 @@ If you use this code, please cite the following work:
 ## Reference performance
 
 Performance (NS only)
-* 128 x 128 x 128 | 2 x RTX5000@milton |   14 ms/timestep
-* 256 x 256 x 256 | 2 x RTX5000@milton |  129 ms/timestep
-* 128 x 128 x 128 | 4 x A100@Leonardo  |    7 ms/timestep
 * 256 x 256 x 256 | 4 x A100@Leonardo  |   44 ms/timestep
-* 512 x 512 x 512 | 4 x A100@Leonardo  |  470 ms/timestep
-* 512 x 512 x 512 | 8 x A100@Leonardo  |  200 ms/timestep
+* 512 x 512 x 512 | 4 x A100@Leonardo  |  270 ms/timestep
 * 1024 x 1024 x 1024 | 512 x A100@Leonardo | 35 ms/timestep
 * 2048 x 2048 x 2048 | 256 x A100@Leonardo | 740 ms/timestep
 * 128 x 128 x 128 | 4 x H100@MN5-ACC   |    7 ms/timestep
@@ -73,11 +69,6 @@ Performance (NS only)
 * 512 x 512 x 512 | 8 x H100@MN5-ACC   |  172 ms/timestep
 * 1024 x 1024 x 1024 | 512 x H100@MN5-ACC  | 32 ms/timestep
 * 2048 x 2048 x 2048 | 512 x H100@MN5-ACC  | 259 ms/timestep
-
-Max resolution tested (Poisson only):
-*  768 x  768 x  768 | 2 x RTX5000@milton - 16 GB VRAM
-* 2048 x 2048 x 2048 | 32 x A100@Leonardo - 64 GB VRAm (also tested on 256/512 GPUs)
-* 2048 x 2048 x 2048 | 32 x H100@MN5-ACC  - 64 GB VRAm (also tested on 256/512 GPUs)
 
 Phase-field introduces about 15% of overhead compared to NS only.
 
