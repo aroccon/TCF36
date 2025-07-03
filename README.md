@@ -59,7 +59,7 @@ If you use this code, please cite the following work:
 ## Reference performance
 
 Performance (NS only)
-* 256 x 256 x 256 | 4 x A100@Leonardo  |   44 ms/timestep
+* 256 x 256 x 256 | 4 x A100@Leonardo  |   16 ms/timestep
 * 512 x 512 x 512 | 4 x A100@Leonardo  |  270 ms/timestep
 * 1024 x 1024 x 1024 | 512 x A100@Leonardo | 35 ms/timestep
 * 2048 x 2048 x 2048 | 256 x A100@Leonardo | 740 ms/timestep
