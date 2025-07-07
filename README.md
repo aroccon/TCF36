@@ -60,14 +60,13 @@ If you use this code, please cite the following work:
 
 Performance (NS only)
 * 256 x 256 x 256 | 4 x A100@Leonardo  |   16 ms/timestep
-* 512 x 512 x 512 | 4 x A100@Leonardo  |  270 ms/timestep
-* 1024 x 1024 x 1024 | 512 x A100@Leonardo | 35 ms/timestep
-* 2048 x 2048 x 2048 | 256 x A100@Leonardo | 740 ms/timestep
-* 128 x 128 x 128 | 4 x H100@MN5-ACC   |    7 ms/timestep
-* 256 x 256 x 256 | 4 x H100@MN5-ACC   |   40 ms/timestep
-* 512 x 512 x 512 | 4 x H100@MN5-ACC   |  450 ms/timestep
-* 512 x 512 x 512 | 8 x H100@MN5-ACC   |  172 ms/timestep
-* 1024 x 1024 x 1024 | 512 x H100@MN5-ACC  | 32 ms/timestep
+* 512 x 512 x 512 | 4 x A100@Leonardo  |  270 ms/timestep 
+* 1024 x 1024 x 1024 | 32 x A100@Leonardo | 357 ms/timestep 
+* 2048 x 2048 x 2048 | 128 x A100@Leonardo | 820 ms/timestep
+* 256 x 256 x 256 | 4 x H100@MN5-ACC   |   13 ms/timestep
+* 512 x 512 x 512 | 4 x H100@MN5-ACC   |  230 ms/timestep
+* 1024 x 1024 x 1024 | 32 x H100@MN5-ACC  | 320 ms/timestep
+
 * 2048 x 2048 x 2048 | 512 x H100@MN5-ACC  | 259 ms/timestep
 
 Phase-field introduces about 15% of overhead compared to NS only.

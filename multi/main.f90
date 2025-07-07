@@ -190,7 +190,7 @@ allocate(div(piX%shape(1),piX%shape(2),piX%shape(3)))
 allocate(phi(piX%shape(1),piX%shape(2),piX%shape(3)),rhsphi(piX%shape(1),piX%shape(2),piX%shape(3)),rhsphi_o(piX%shape(1),piX%shape(2),piX%shape(3)))
 allocate(psidi(piX%shape(1),piX%shape(2),piX%shape(3)))
 allocate(normx(piX%shape(1),piX%shape(2),piX%shape(3)),normy(piX%shape(1),piX%shape(2),piX%shape(3)),normz(piX%shape(1),piX%shape(2),piX%shape(3)))
-allocate(chempot(piX%shape(1),piX%shape(2),piX%shape(3)),gradphix(piX%shape(1),piX%shape(2),piX%shape(3)),gradphiy(piX%shape(1),piX%shape(2),piX%shape(3)),gradphiz(piX%shape(1),piX%shape(2),piX%shape(3)))
+allocate(chempot(piX%shape(1),piX%shape(2),piX%shape(3)))
 allocate(fxst(piX%shape(1),piX%shape(2),piX%shape(3)),fyst(piX%shape(1),piX%shape(2),piX%shape(3)),fzst(piX%shape(1),piX%shape(2),piX%shape(3))) ! surface tension forces
 #endif
 
@@ -453,11 +453,7 @@ do t=tstart,tfin
                km=k-1
                if (ip .gt. nx) ip=1
                if (im .lt. 1) im=nx
-               ! OLD CDI
-               !rhsphi(i,j,k)=rhsphi(i,j,k)+gamma*(((phi(ip,j,k)**2d0-phi(ip,j,k))*normx(ip,j,k)-(phi(im,j,k)**2d0-phi(im,j,k))*normx(im,j,k))*0.5d0*dxi + &
-               !                                    ((phi(i,jp,k)**2d0-phi(i,jp,k))*normy(i,jp,k)-(phi(i,jm,k)**2d0-phi(i,jm,k))*normy(i,jm,k))*0.5d0*dxi + &
-               !                                    ((phi(i,j,kp)**2d0-phi(i,j,kp))*normz(i,j,kp)-(phi(i,j,km)**2d0-phi(i,j,km))*normz(i,j,km))*0.5d0*dxi)
-               ! NEW ACDI
+               ! ACDI
                rhsphi(i,j,k)=rhsphi(i,j,k)-gamma*((0.25d0*(1.d0-(tanh(0.5d0*psidi(ip,j,k)*epsi))**2)*normx(ip,j,k)- 0.25d0*(1.d0-(tanh(0.5d0*psidi(im,j,k)*epsi))**2)*normx(im,j,k))*0.5*dxi +&
                                                   (0.25d0*(1.d0-(tanh(0.5d0*psidi(i,jp,k)*epsi))**2)*normy(i,jp,k)- 0.25d0*(1.d0-(tanh(0.5d0*psidi(i,jm,k)*epsi))**2)*normy(i,jm,k))*0.5*dxi +&
                                                   (0.25d0*(1.d0-(tanh(0.5d0*psidi(i,j,kp)*epsi))**2)*normz(i,j,kp)- 0.25d0*(1.d0-(tanh(0.5d0*psidi(i,j,km)*epsi))**2)*normz(i,j,km))*0.5*dxi)
@@ -472,6 +468,7 @@ do t=tstart,tfin
       do j=1+halo_ext, piX%shape(2)-halo_ext
             do i=1,nx
                 phi(i,j,k) = phi(i,j,k) + dt*(alpha*rhsphi(i,j,k)-beta*rhsphi_o(i,j,k))
+                rhsphi_o(i,j,k)=rhsphi(i,j,k)
             enddo
         enddo
     enddo
@@ -610,12 +607,9 @@ do t=tstart,tfin
             if (ip .gt. nx) ip=1
             if (im .lt. 1) im=nx
             chempot(i,j,k)=phi(i,j,k)*(1.d0-phi(i,j,k))*(1.d0-2.d0*phi(i,j,k))*epsi-eps*(phi(ip,j,k)+phi(im,j,k)+phi(i,jp,k)+phi(i,jm,k)+phi(i,j,kp)+phi(i,j,km)- 6.d0*phi(i,j,k))*ddxi
-            gradphix(i,j,k)=0.5d0*(phi(ip,j,k)-phi(im,j,k))*dxi
-            gradphiy(i,j,k)=0.5d0*(phi(i,jp,k)-phi(i,jm,k))*dxi
-            gradphiz(i,j,k)=0.5d0*(phi(i,j,kp)-phi(i,j,km))*dxi
-            fxst(i,j,k)=6.d0*sigma*chempot(i,j,k)*gradphix(i,j,k)
-            fyst(i,j,k)=6.d0*sigma*chempot(i,j,k)*gradphiy(i,j,k)
-            fzst(i,j,k)=6.d0*sigma*chempot(i,j,k)*gradphiz(i,j,k)
+            fxst(i,j,k)=6.d0*sigma*chempot(i,j,k)*0.5d0*(phi(ip,j,k)-phi(im,j,k))*dxi
+            fyst(i,j,k)=6.d0*sigma*chempot(i,j,k)*0.5d0*(phi(i,jp,k)-phi(i,jm,k))*dxi
+            fzst(i,j,k)=6.d0*sigma*chempot(i,j,k)*0.5d0*(phi(i,jp,k)-phi(i,jm,k))*dxi
          enddo
       enddo
    enddo
