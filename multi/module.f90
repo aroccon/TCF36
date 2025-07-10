@@ -38,7 +38,6 @@ end module cudecompvar
 
 module velocity
    double precision, allocatable :: u(:,:,:), v(:,:,:), w(:,:,:)
-   double precision, allocatable :: ustar(:,:,:), vstar(:,:,:), wstar(:,:,:)
    double precision, allocatable :: rhsu(:,:,:), rhsv(:,:,:), rhsw(:,:,:)
    double precision, allocatable :: rhsu_o(:,:,:), rhsv_o(:,:,:), rhsw_o(:,:,:)
    complex(8), allocatable :: rhsp_complex(:,:,:)
@@ -53,7 +52,7 @@ end module velocity
 module phase
    double precision, allocatable :: phi(:,:,:), rhsphi(:,:,:), psidi(:,:,:), rhsphi_o(:,:,:)
    double precision, allocatable :: normx(:,:,:), normy(:,:,:), normz(:,:,:)
-   double precision, allocatable :: chempot(:,:,:), gradphix(:,:,:), gradphiy(:,:,:), gradphiz(:,:,:)
+   double precision, allocatable :: chempot(:,:,:)
    double precision, allocatable :: fxst(:,:,:), fyst(:,:,:), fzst(:,:,:)
 end module phase
 
