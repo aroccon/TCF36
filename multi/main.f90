@@ -33,7 +33,7 @@ integer :: inY,enY,inZ,enZ
 !beginDEBUG
 integer, parameter :: Mx = 1, My = 2, Mz = 1
 !endDEBUG
-real(8), device, allocatable :: kx_d(:)
+real(8), device, allocatable :: kx_d(:),ky_d(:)
 ! working arrays
 complex(8), allocatable :: psi(:)
 real(8), allocatable :: ua(:,:,:)
@@ -232,11 +232,11 @@ enddo
 do i = nx/2+1, nx
    kx(i) = (i-1-nx)*(twopi/lx)
 enddo
-do i = 1, ny/2
-   ky(i) = (j-1)*(twopi/l)
+do j = 1, ny/2
+   ky(i) = (j-1)*(twopi/ly)
 enddo
-do i = ny/2+1, ny
-   ky(i) = (j-1-ny)*(twopi/lx)
+do j = ny/2+1, ny
+   ky(i) = (j-1-ny)*(twopi/ly)
 enddo
 ! allocate kx_d and ky_d on the device 
 allocate(kx_d, source=kx)
