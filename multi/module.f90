@@ -1,7 +1,8 @@
 module param
     integer, parameter :: nx=128
-    integer :: ny=nx,nz=nx
-    double precision :: pi,lx,dx,dxi,ddxi,rhoi,twopi
+    integer, parameter :: ny=128
+    integer, parameter :: nz=128
+    double precision :: pi,lx,dx,dxi,ddxi,rhoi,twopi,dy,dyi,ddyi,dz,dzi,ddzi
     integer :: restart,tstart,tfin,dump
     double precision :: gamma, normod
     double precision :: dt,mu,rho !flow parameters

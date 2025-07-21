@@ -10,29 +10,50 @@ use phase
 use param
 use mpivar
 use cudecompvar
+use nvtx
 
 
 implicit none
+! timer for scaling test
+real :: t_start, t_end, elapsed
 ! grid dimensions
 integer :: comm_backend
 integer :: pr, pc
 ! cudecomp
 ! cuFFT
-integer :: planX, planY, planZ
+integer :: planXf, planXb
+integer :: planY, planZ
 integer :: batchsize
 integer :: status
 ! other variables (wavenumber, grid location)
-real(8), allocatable :: x(:), kx(:)
+real(8), allocatable :: x(:), y(:), z(:), kx(:), ky(:)
 integer :: i,j,k,il,jl,kl,ig,jg,kg,t
 integer :: im,ip,jm,jp,km,kp,last
-!integer, parameter :: Mx = 1, My = 0, Mz = 0
+integer :: inY,enY,inZ,enZ
+!beginDEBUG
+integer, parameter :: Mx = 1, My = 2, Mz = 1
+!endDEBUG
 real(8), device, allocatable :: kx_d(:)
 ! working arrays
-complex(8), allocatable :: psi(:), ua(:,:,:)
+complex(8), allocatable :: psi(:)
+real(8), allocatable :: ua(:,:,:)
+real(8), allocatable :: uaa(:,:,:)
+
+real(8), allocatable :: psi_real(:)
+! real(8), device, allocatable :: psi_real_d(:)
 complex(8), device, allocatable :: psi_d(:)
-complex(8), pointer, device, contiguous :: work_d(:), work_halo_d(:)
+complex(8), pointer, device, contiguous :: work_d(:), work_halo_d(:), work_d_d2z(:), work_halo_d_d2z(:)
 character(len=40) :: namefile
+character(len=4) :: itcount
 ! Code variables
+
+real(8)::err,maxErr
+
+complex(8), device, pointer :: phi3d(:,:,:)
+real(8) :: k2
+!integer :: il, jl, ig, jg
+integer :: offsets(3), xoff, yoff
+integer :: np(3)
 
 ! Enable or disable phase field (acceleration eneabled by default)
 #define phiflag 0
@@ -53,14 +74,14 @@ ierr = cudaSetDevice(localRank) !assign GPU to MPI rank
 ! Define grid and decomposition
 call readinput
 
-! hard coded, then from input
+! hard coded
 pr = 0
 pc = 0
 halo_ext=1
-comm_backend = CUDECOMP_TRANSPOSE_COMM_MPI_P2P
+! comm_backend = CUDECOMP_TRANSPOSE_COMM_MPI_P2P
+comm_backend = 0 ! Enable full autotuning
 
 CHECK_CUDECOMP_EXIT(cudecompInit(handle, MPI_COMM_WORLD))
-
 ! config is a struct and pr and pc are the number of pencils along the two directions
 ! gdims is the global grid
 ! create an uninitialized configuration struct and initialize it to defaults using cudecompGridDescConfigSetDefaults. 
@@ -68,8 +89,8 @@ CHECK_CUDECOMP_EXIT(cudecompInit(handle, MPI_COMM_WORLD))
 CHECK_CUDECOMP_EXIT(cudecompGridDescConfigSetDefaults(config))
 pdims = [pr, pc] !pr and pc are the number of pencil along the different directions
 config%pdims = pdims
-gdims = [nx, ny, nz]
-config%gdims = gdims
+! gdims = [nx, ny, nz]
+! config%gdims = gdims
 halo = [0, halo_ext, halo_ext] ! no halo along x neeed because is periodic and in physical space i have x-pencil
 ! for transpositions
 config%transpose_comm_backend = comm_backend
@@ -79,25 +100,53 @@ config%halo_comm_backend = CUDECOMP_HALO_COMM_MPI
 ! Setting for periodic halos in all directions (non required to be in config)
 halo_periods = [.true., .true., .true.]
 
+! create spectral grid descriptor first to select pdims for optimal transposes
+gdims = [nx/2+1, ny, nz]
+config%gdims = gdims
+
+! Set up autotuning options for spectral grid (transpose related settings)
 CHECK_CUDECOMP_EXIT(cudecompGridDescAutotuneOptionsSetDefaults(options))
 options%dtype = CUDECOMP_DOUBLE_COMPLEX
 if (comm_backend == 0) then
    options%autotune_transpose_backend = .true.
+   options%autotune_halo_backend = .false.
 endif
+options%transpose_use_inplace_buffers = .true.
+options%transpose_input_halo_extents(:, 1) = halo
+options%transpose_output_halo_extents(:, 4) = halo
 
-! initialize cuDecomp with the config file 
+CHECK_CUDECOMP_EXIT(cudecompGridDescCreate(handle, grid_descD2Z, config, options))
+
+! create physical grid descriptor
+! take previous config and modify the global grid (nx instead of nx/2+1)
+! reset transpose_comm_backend to default value to avoid picking up possible nvshmem
+! transpose backend selection (this impacts how workspaces are allocated)
+gdims = [nx, ny, nz]
+config%gdims = gdims
+config%transpose_comm_backend = CUDECOMP_TRANSPOSE_COMM_MPI_P2P
+
+! Set up autotuning options for physical grid (halo related settings)
+CHECK_CUDECOMP_EXIT(cudecompGridDescAutotuneOptionsSetDefaults(options))
+options%dtype = CUDECOMP_DOUBLE_COMPLEX
+if (comm_backend == 0) then
+   options%autotune_halo_backend = .true.
+endif
+options%halo_extents(:) = halo
+options%halo_periods(:) = halo_periods
+options%halo_axis = 1
 CHECK_CUDECOMP_EXIT(cudecompGridDescCreate(handle, grid_desc, config, options))
 
 ! Print information on configuration
-if (rank == 0) then
-   write(*,"(' Running on ', i0, ' x ', i0, ' process grid ...')") config%pdims(1), config%pdims(2)
-   write(*,"(' Using ', a, ' transpose backend ...')") &
-            cudecompTransposeCommBackendToString(config%transpose_comm_backend)
-   write(*,"(' Using ', a, ' halo backend ...')") &
-            cudecompHaloCommBackendToString(config%halo_comm_backend)
-endif
+!if (rank == 0) then
+!   write(*,"(' Running on ', i0, ' x ', i0, ' process grid ...')") config%pdims(1), config%pdims(2)
+!   write(*,"(' Using ', a, ' transpose backend ...')") &
+!            cudecompTransposeCommBackendToString(config%transpose_comm_backend)
+!   write(*,"(' Using ', a, ' halo backend ...')") &
+!            cudecompHaloCommBackendToString(config%halo_comm_backend)
+!endif
 
-! get pencil info
+
+! Get pencil info for the grid descriptor in the physical space
 ! This function returns a pencil struct (piX, piY or piZ) that contains the shape, global lower and upper index bounds (lo and hi), 
 ! size of the pencil, and an order array to indicate the memory layout that will be used (to handle permuted, axis-contiguous layouts).
 ! Additionally, there is a halo_extents data member that indicates the depth of halos for the pencil, by axis.
@@ -113,51 +162,85 @@ nElemY = piY%size
 CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_desc, piZ, 3))
 nElemZ = piZ%size
 
-! Get workspace sizes for transpose (1st row) and halo (2nd row)
+! Get workspace sizes for transpose (1st row, not used) and halo (2nd row, used)
 CHECK_CUDECOMP_EXIT(cudecompGetTransposeWorkspaceSize(handle, grid_desc, nElemWork))
 CHECK_CUDECOMP_EXIT(cudecompGetHaloWorkspaceSize(handle, grid_desc, 1, halo, nElemWork_halo))
 
-! show the order 1=x, 2=y, 3=z
-! x-pencils are x,y,z
-! y-pencils are y,z,x
-! z-pencils are z,y,x
-! This is to make the setup of cuFFT easier, cuFFT cannot do FFT along inner directions and also for performance (no stride)
-! if (rank .eq. 0) then
-!   write(*,*) "Order in X-pencil is", piX%order(1),piX%order(2),piX%order(3)
-!   write(*,*) "Order in Y-pencil is", piY%order(1),piY%order(2),piY%order(3)
-!   write(*,*) "Order in Z-pencil is", piZ%order(1),piZ%order(2),piZ%order(3)
-! endif
 
-! CUFFT initialization
-! Create plans (forward and backward are the same because is Z2Z!)
-batchSize = piX%shape(2)*piX%shape(3) !<- number of FFT (from x-pencil dimension)
-status = cufftPlan1D(planX, nx, CUFFT_Z2Z, batchSize)
-if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating X plan'
+
+
+
+
+! Get pencil info for the grid descriptor in the complex space 
+!gdims = [nx/2+1, ny, nz]
+!config%gdims = gdims
+!CHECK_CUDECOMP_EXIT(cudecompGridDescCreate(handle, grid_descD2Z, config, options))
+
+CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_descD2Z, piX_d2z, 1,halo))
+nElemX_d2z = piX_d2z%size !<- number of total elments in x-configuratiion (include halo)
+! Pencil info in Y-configuration present in PiY
+CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_descD2Z, piY_d2z, 2))
+nElemY_d2z = piY_d2z%size
+! Pencil info in Z-configuration present in PiZ
+CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_descD2Z, piZ_d2z, 3))
+nElemZ_d2z = piZ_d2z%size
+! Get workspace sizes for transpose (1st row,used) and halo (2nd row, not used)
+CHECK_CUDECOMP_EXIT(cudecompGetTransposeWorkspaceSize(handle, grid_descD2Z, nElemWork_d2z))
+CHECK_CUDECOMP_EXIT(cudecompGetHaloWorkspaceSize(handle, grid_descD2Z, 1, halo, nElemWork_halo_d2z))
+
+
+
+
+
+
+! CUFFT initialization -- Create Plans
+! Forward 1D FFT in X: D2Z
+batchSize = piX_d2z%shape(2)*piX_d2z%shape(3) !<- number of FFT (from x-pencil dimension)
+status = cufftPlan1D(planXf, nx, CUFFT_D2Z, batchSize)
+if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating X plan Forward'
+
+! Backward 1D FFT in X: Z2D
+batchSize = piX_d2z%shape(2)*piX_d2z%shape(3) !<- number of FFT (from x-pencil dimension)
+status = cufftPlan1D(planXb, nx, CUFFT_Z2D, batchSize)
+if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating X plan Backward'
 
 ! it's always 2 and 3 because y-pencil have coordinates y,z,x
-batchSize = piY%shape(2)*piY%shape(3)
+batchSize = piY_d2z%shape(2)*piY_d2z%shape(3)
 status = cufftPlan1D(planY, ny, CUFFT_Z2Z, batchSize)
-if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating Y plan'
+if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating Y plan Forward & Backward'
 
-! it's always 2 and 3 because y-pencil have coordinates z,y,x
-batchSize = piZ%shape(2)*piZ%shape(3)
-status = cufftPlan1D(planZ, nz, CUFFT_Z2Z, batchSize)
-if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating Z plan'
+! Z-plan removed (not neeeded)
 
 ! define grid
-allocate(x(nx),kx(nx))
-x(1)= 0
+allocate(x(nx),y(ny),z(nz),kx(nx),ky(ny))
+! location of the pressure nodes (cell centers)
+x(1)=dx/2
 do i = 2, nx
    x(i) = x(i-1) + dx
 enddo
+y(1)=dy/2
+do i = 2, ny
+   y(i) = y(i-1) + dy
+enddo
+z(1)=dz/2
+do i = 2, nz
+   z(i) = z(i-1) + dz
+enddo
 do i = 1, nx/2
-   kx(i) = (i-1)*(twoPi/lx)
+   kx(i) = (i-1)*(twopi/lx)
 enddo
 do i = nx/2+1, nx
-   kx(i) = (i-1-nx)*(twoPi/LX)
+   kx(i) = (i-1-nx)*(twopi/lx)
 enddo
-! allocate k_d on the device (later on remove and use OpenACC + managed memory?)
+do i = 1, ny/2
+   ky(i) = (j-1)*(twopi/l)
+enddo
+do i = ny/2+1, ny
+   ky(i) = (j-1-ny)*(twopi/lx)
+enddo
+! allocate kx_d and ky_d on the device 
 allocate(kx_d, source=kx)
+allocate(ky_d, source=ky)
 !########################################################################################################################################
 ! 1. INITIALIZATION AND cuDECOMP AUTOTUNING : END
 !########################################################################################################################################
@@ -172,34 +255,39 @@ allocate(kx_d, source=kx)
 !########################################################################################################################################
 ! allocate arrays
 allocate(psi(max(nElemX, nElemY, nElemZ))) !largest among the pencil
-allocate(psi_d, mold=psi) ! phi on device
+allocate(psi_real(max(nElemX, nElemY, nElemZ))) !largest among the pencil
+allocate(psi_d(max(nElemX_d2z, nElemY_d2z, nElemZ_d2z))) ! phi on device
 allocate(ua(nx, piX%shape(2), piX%shape(3)))
+
 ! Pressure variable
-allocate(rhsp_complex(piX%shape(1), piX%shape(2), piX%shape(3)))
 allocate(rhsp(piX%shape(1), piX%shape(2), piX%shape(3))) 
 allocate(p(piX%shape(1), piX%shape(2), piX%shape(3))) 
+
 !allocate variables
 !NS variables
 allocate(u(piX%shape(1),piX%shape(2),piX%shape(3)),v(piX%shape(1),piX%shape(2),piX%shape(3)),w(piX%shape(1),piX%shape(2),piX%shape(3))) !velocity vector
+! allocate(ustar(piX%shape(1),piX%shape(2),piX%shape(3)),vstar(piX%shape(1),piX%shape(2),piX%shape(3)),wstar(piX%shape(1),piX%shape(2),piX%shape(3))) ! provisional velocity field
 allocate(rhsu(piX%shape(1),piX%shape(2),piX%shape(3)),rhsv(piX%shape(1),piX%shape(2),piX%shape(3)),rhsw(piX%shape(1),piX%shape(2),piX%shape(3))) ! right hand side u,v,w
 allocate(rhsu_o(piX%shape(1),piX%shape(2),piX%shape(3)),rhsv_o(piX%shape(1),piX%shape(2),piX%shape(3)),rhsw_o(piX%shape(1),piX%shape(2),piX%shape(3))) ! right hand side u,v,w
 allocate(div(piX%shape(1),piX%shape(2),piX%shape(3)))
 !PFM variables
 #if phiflag == 1
-allocate(phi(piX%shape(1),piX%shape(2),piX%shape(3)),rhsphi(piX%shape(1),piX%shape(2),piX%shape(3)),rhsphi_o(piX%shape(1),piX%shape(2),piX%shape(3)))
+allocate(phi(piX%shape(1),piX%shape(2),piX%shape(3)),rhsphi(piX%shape(1),piX%shape(2),piX%shape(3)))
 allocate(psidi(piX%shape(1),piX%shape(2),piX%shape(3)))
+allocate(tanh_psi(piX%shape(1),piX%shape(2),piX%shape(3)))
 allocate(normx(piX%shape(1),piX%shape(2),piX%shape(3)),normy(piX%shape(1),piX%shape(2),piX%shape(3)),normz(piX%shape(1),piX%shape(2),piX%shape(3)))
-allocate(chempot(piX%shape(1),piX%shape(2),piX%shape(3)))
 allocate(fxst(piX%shape(1),piX%shape(2),piX%shape(3)),fyst(piX%shape(1),piX%shape(2),piX%shape(3)),fzst(piX%shape(1),piX%shape(2),piX%shape(3))) ! surface tension forces
 #endif
 
 ! allocate arrays for transpositions and halo exchanges 
 CHECK_CUDECOMP_EXIT(cudecompMalloc(handle, grid_desc, work_d, nElemWork))
 CHECK_CUDECOMP_EXIT(cudecompMalloc(handle, grid_desc, work_halo_d, nElemWork_halo))
+! allocate arrays for transpositions
+CHECK_CUDECOMP_EXIT(cudecompMalloc(handle, grid_descD2Z, work_d_d2z, nElemWork_d2z))
+CHECK_CUDECOMP_EXIT(cudecompMalloc(handle, grid_descD2Z, work_halo_d_d2z, nElemWork_halo_d2z))
 !########################################################################################################################################
 ! END STEP2: ALLOCATE ARRAYS
 !########################################################################################################################################
-
 
 
 
@@ -222,8 +310,8 @@ if (rank.eq.0) write(*,*) "Initialize velocity field (fresh start)"
          do j = 1+halo_ext, piX%shape(2)-halo_ext
             jg = piX%lo(2) + j - 1 
             do i = 1, piX%shape(1)
-               u(i,j,k) =   sin(x(i))*cos(x(jg))*cos(x(kg))
-               v(i,j,k) =  -cos(x(i))*sin(x(jg))*cos(x(kg))
+               u(i,j,k) =  0.d0
+               v(i,j,k) =  0.d0
                w(i,j,k) =  0.d0
             enddo
          enddo
@@ -296,7 +384,7 @@ if (restart .eq. 0) then
    call writefield(tstart,1)
    call writefield(tstart,2)
    call writefield(tstart,3)
-   !call writefield(tstart,4)
+   call writefield(tstart,4)
    #if phiflag == 1
    call writefield(tstart,5)
    #endif
@@ -304,9 +392,6 @@ endif
 !########################################################################################################################################
 ! END STEP 3: FLOW AND PHASE FIELD INIT
 !########################################################################################################################################
-
-
-
 
 
 
@@ -323,78 +408,44 @@ beta=0.0d0
 gumax=1.d0
 tstart=tstart+1
 gamma=1.d0*gumax
+!$acc data copyin(piX)
+!$acc data create(rhsu_o, rhsv_o, rhsw_o)
+!$acc data copyin(mysin, mycos)
+call cpu_time(t_start)
 ! Start temporal loop
 do t=tstart,tfin
+    ! Create custom label for each marker
+    write(itcount,'(i4)') t
+    ! Range with custom  color
+    call nvtxStartRange("Iteration "//itcount,t)
 
     if (rank.eq.0) write(*,*) "Time step",t,"of",tfin
     call cpu_time(times)
 
+   call nvtxStartRange("Phase-field")
    !########################################################################################################################################
    ! START STEP 4: PHASE-FIELD SOLVER (EXPLICIT)
    !########################################################################################################################################
    #if phiflag == 1
-   ! 4.1 RHS computation, no need of halo update in thoery
-   ! 4.1.1 Convective term
-   !$acc kernels
-   do k=1+halo_ext, piX%shape(3)-halo_ext
-      do j=1+halo_ext, piX%shape(2)-halo_ext
-            do i=1,nx
-               ip=i+1
-               jp=j+1
-               kp=k+1
-               im=i-1
-               jm=j-1
-               km=k-1
-               if (ip .gt. nx) ip=1
-               if (im .lt. 1) im=nx
-               rhsphi(i,j,k) = - (u(ip,j,k)*0.5d0*(phi(ip,j,k)+phi(i,j,k)) - u(i,j,k)*0.5d0*(phi(i,j,k)+phi(im,j,k)))*dxi  &
-                               - (v(i,jp,k)*0.5d0*(phi(i,jp,k)+phi(i,j,k)) - v(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,jm,k)))*dxi  &
-                               - (w(i,j,kp)*0.5d0*(phi(i,j,kp)+phi(i,j,k)) - w(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,j,km)))*dxi
-            enddo
-        enddo
-   enddo
-   !$acc end kernels
-
-   ! 4.1.2 Compute diffusive term 
-   gamma=1.0d0*gumax
-   !$acc kernels
-   do k=1+halo_ext, piX%shape(3)-halo_ext
-      do j=1+halo_ext, piX%shape(2)-halo_ext
-         do i=1,nx
-               ip=i+1
-               jp=j+1
-               kp=k+1
-               im=i-1
-               jm=j-1
-               km=k-1
-               if (ip .gt. nx) ip=1
-               if (im .lt. 1) im=nx
-               rhsphi(i,j,k)=rhsphi(i,j,k)+gamma*(eps*(phi(ip,j,k)-2.d0*phi(i,j,k)+phi(im,j,k))*ddxi + &
-                                                  eps*(phi(i,jp,k)-2.d0*phi(i,j,k)+phi(i,jm,k))*ddxi + &         
-                                                  eps*(phi(i,j,kp)-2.d0*phi(i,j,k)+phi(i,j,km))*ddxi)
-            enddo
-        enddo
-   enddo
-   !$acc end kernels
-
-   ! compute distance function psi (used to compute normals)
    !$acc kernels
    do k=1, piX%shape(3)
       do j=1, piX%shape(2)
          do i=1,nx
+            ! compute distance function psi (used to compute normals)
             val = min(phi(i,j,k),1.0d0) ! avoid machine precision overshoots in phi that leads to problem with log
             psidi(i,j,k) = eps*log((val+enum)/(1.d0-val+enum))
+            ! compute here the tanh of distance function psi (used in the sharpening term) to avoid multiple computations of tanh
+            tanh_psi(i,j,k) = tanh(0.5d0*psidi(i,j,k)*epsi)
          enddo
       enddo
    enddo
    !$acc end kernels
 
-   ! 4.1.3. Compute Sharpening term (gradien)
-   ! Substep 1 computer normals
-   !$acc kernels
+   !$acc parallel loop tile(16,4,2)
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
+            ! 4.1 RHS computation
             ip=i+1
             jp=j+1
             kp=k+1
@@ -403,13 +454,21 @@ do t=tstart,tfin
             km=k-1
             if (ip .gt. nx) ip=1
             if (im .lt. 1) im=nx
+            ! convective (first three lines) and diffusive (last three lines)
+            rhsphi(i,j,k) =   &
+                  - (u(ip,j,k)*0.5d0*(phi(ip,j,k)+phi(i,j,k)) - u(i,j,k)*0.5d0*(phi(i,j,k)+phi(im,j,k)))*dxi  &  
+                  - (v(i,jp,k)*0.5d0*(phi(i,jp,k)+phi(i,j,k)) - v(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,jm,k)))*dxi  &  
+                  - (w(i,j,kp)*0.5d0*(phi(i,j,kp)+phi(i,j,k)) - w(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,j,km)))*dxi  &  
+                        + gamma*(eps*(phi(ip,j,k)-2.d0*phi(i,j,k)+phi(im,j,k))*ddxi + &                   
+                                 eps*(phi(i,jp,k)-2.d0*phi(i,j,k)+phi(i,jm,k))*ddxi + &                   
+                                 eps*(phi(i,j,kp)-2.d0*phi(i,j,k)+phi(i,j,km))*ddxi)                      
+            ! 4.1.3. Compute normals for sharpening term (gradient)
             normx(i,j,k) = (psidi(ip,j,k) - psidi(im,j,k))
             normy(i,j,k) = (psidi(i,jp,k) - psidi(i,jm,k))
-            normz(i,j,k) = (psidi(i,j,kp) - psidi(i,j,km)) 
+            normz(i,j,k) = (psidi(i,j,kp) - psidi(i,j,km))
          enddo
       enddo
-   enddo 
-   !$acc end kernels
+   enddo
 
    ! Update normx,normy and normz halos, required to then compute normal derivative
    !$acc host_data use_device(normx)
@@ -425,12 +484,14 @@ do t=tstart,tfin
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, normz, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
 
-   ! Step 2: Compute normals (1.e-16 is a numerical tollerance to avodi 0/0)
+   ! 4.1.3. Compute Sharpening term (gradient)
+   ! Substep 2: Compute normals (1.e-16 is a numerical tollerance to avodi 0/0)
    !$acc kernels
    do k=1, piX%shape(3)
       do j=1, piX%shape(2)
          do i=1,nx
-            normod = 1.d0/(sqrt(normx(i,j,k)**2d0 + normy(i,j,k)**2d0 + normz(i,j,k)**2d0) + 1.0E-16)
+            normod = 1.d0/(sqrt(normx(i,j,k)*normx(i,j,k) + normy(i,j,k)*normy(i,j,k) + normz(i,j,k)*normz(i,j,k)) + 1.0E-16)
+            ! normod = 1.d0/(sqrt(normx(i,j,k)**2d0 + normy(i,j,k)**2d0 + normz(i,j,k)**2d0) + 1.0E-16)
             normx(i,j,k) = normx(i,j,k)*normod
             normy(i,j,k) = normy(i,j,k)*normod
             normz(i,j,k) = normz(i,j,k)*normod
@@ -452,22 +513,23 @@ do t=tstart,tfin
                km=k-1
                if (ip .gt. nx) ip=1
                if (im .lt. 1) im=nx
-               ! ACDI
-               rhsphi(i,j,k)=rhsphi(i,j,k)-gamma*((0.25d0*(1.d0-(tanh(0.5d0*psidi(ip,j,k)*epsi))**2)*normx(ip,j,k)- 0.25d0*(1.d0-(tanh(0.5d0*psidi(im,j,k)*epsi))**2)*normx(im,j,k))*0.5*dxi +&
-                                                  (0.25d0*(1.d0-(tanh(0.5d0*psidi(i,jp,k)*epsi))**2)*normy(i,jp,k)- 0.25d0*(1.d0-(tanh(0.5d0*psidi(i,jm,k)*epsi))**2)*normy(i,jm,k))*0.5*dxi +&
-                                                  (0.25d0*(1.d0-(tanh(0.5d0*psidi(i,j,kp)*epsi))**2)*normz(i,j,kp)- 0.25d0*(1.d0-(tanh(0.5d0*psidi(i,j,km)*epsi))**2)*normz(i,j,km))*0.5*dxi)
+               rhsphi(i,j,k)=rhsphi(i,j,k)-gamma*((0.25d0*(1.d0-tanh_psi(ip,j,k)*tanh_psi(ip,j,k))*normx(ip,j,k) - &
+                                                      0.25d0*(1.d0-tanh_psi(im,j,k)*tanh_psi(im,j,k))*normx(im,j,k))*0.5*dxi + &
+                                                     (0.25d0*(1.d0-tanh_psi(i,jp,k)*tanh_psi(i,jp,k))*normy(i,jp,k) - &
+                                                      0.25d0*(1.d0-tanh_psi(i,jm,k)*tanh_psi(i,jm,k))*normy(i,jm,k))*0.5*dxi + &
+                                                     (0.25d0*(1.d0-tanh_psi(i,j,kp)*tanh_psi(i,j,kp))*normz(i,j,kp) - &
+                                                      0.25d0*(1.d0-tanh_psi(i,j,km)*tanh_psi(i,j,km))*normz(i,j,km))*0.5*dxi)
             enddo
         enddo
     enddo
     !$acc end kernels
 
-   ! 4.2 Get phi at n+1 using AB2
+   ! 4.2 Get phi at n+1 
    !$acc kernels
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
             do i=1,nx
-                phi(i,j,k) = phi(i,j,k) + dt*(alpha*rhsphi(i,j,k)-beta*rhsphi_o(i,j,k))
-                rhsphi_o(i,j,k)=rhsphi(i,j,k)
+                phi(i,j,k) = phi(i,j,k) + dt*rhsphi(i,j,k)
             enddo
         enddo
     enddo
@@ -480,17 +542,16 @@ do t=tstart,tfin
    !$acc end host_data 
    #endif
    !########################################################################################################################################
-   ! END STEP 4: PHASE-FIELD SOLVER 
+   ! END STEP 4: PHASE-FIELD SOLVER (EXPLICIT)
    !########################################################################################################################################
+   call nvtxEndRange
 
 
 
 
 
 
-
-
-
+   call nvtxStartRange("Projection")
    !########################################################################################################################################
    ! START STEP 5: USTAR COMPUTATION (PROJECTION STEP)
    !########################################################################################################################################
@@ -501,7 +562,7 @@ do t=tstart,tfin
    ! Projection step, convective terms
    ! 5.1a Convective terms NS
    ! Loop on inner nodes
-   !$acc parallel loop collapse(3) private(im,jm,km)
+   !$acc parallel loop tile(16,4,2) 
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
@@ -526,127 +587,40 @@ do t=tstart,tfin
             h33 = (w(i,j,kp)+w(i,j,k))*(w(i,j,kp)+w(i,j,k))     - (w(i,j,k)+w(i,j,km))*(w(i,j,k)+w(i,j,km))
             ! compute the derivative
             h11=h11*0.25d0*dxi
-            h12=h12*0.25d0*dxi
-            h13=h13*0.25d0*dxi
+            h12=h12*0.25d0*dyi
+            h13=h13*0.25d0*dzi
             h21=h21*0.25d0*dxi
-            h22=h22*0.25d0*dxi
-            h23=h23*0.25d0*dxi
+            h22=h22*0.25d0*dyi
+            h23=h23*0.25d0*dzi
             h31=h31*0.25d0*dxi
-            h32=h32*0.25d0*dxi
-            h33=h33*0.25d0*dxi
+            h32=h32*0.25d0*dyi
+            h33=h33*0.25d0*dzi
             ! add to the rhs
             rhsu(i,j,k)=-(h11+h12+h13)
             rhsv(i,j,k)=-(h21+h22+h23)
             rhsw(i,j,k)=-(h31+h32+h33)
-         enddo
-      enddo
-   enddo
-
-   ! 5.1b Compute viscous terms
-   !$acc parallel loop collapse(3) private(im,jm,km)
-   do k=1+halo_ext, piX%shape(3)-halo_ext
-      do j=1+halo_ext, piX%shape(2)-halo_ext
-         do i=1,nx
-            ip=i+1
-            jp=j+1
-            kp=k+1
-            im=i-1
-            jm=j-1
-            km=k-1
-            if (ip .gt. nx) ip=1
-            if (im .lt. 1) im=nx
+            ! viscous term
             h11 = mu*(u(ip,j,k)-2.d0*u(i,j,k)+u(im,j,k))*ddxi
-            h12 = mu*(u(i,jp,k)-2.d0*u(i,j,k)+u(i,jm,k))*ddxi
-            h13 = mu*(u(i,j,kp)-2.d0*u(i,j,k)+u(i,j,km))*ddxi
+            h12 = mu*(u(i,jp,k)-2.d0*u(i,j,k)+u(i,jm,k))*ddyi
+            h13 = mu*(u(i,j,kp)-2.d0*u(i,j,k)+u(i,j,km))*ddzi
             h21 = mu*(v(ip,j,k)-2.d0*v(i,j,k)+v(im,j,k))*ddxi
-            h22 = mu*(v(i,jp,k)-2.d0*v(i,j,k)+v(i,jm,k))*ddxi
-            h23 = mu*(v(i,j,kp)-2.d0*v(i,j,k)+v(i,j,km))*ddxi
+            h22 = mu*(v(i,jp,k)-2.d0*v(i,j,k)+v(i,jm,k))*ddyi
+            h23 = mu*(v(i,j,kp)-2.d0*v(i,j,k)+v(i,j,km))*ddzi
             h31 = mu*(w(ip,j,k)-2.d0*w(i,j,k)+w(im,j,k))*ddxi
-            h32 = mu*(w(i,jp,k)-2.d0*w(i,j,k)+w(i,jm,k))*ddxi
-            h33 = mu*(w(i,j,kp)-2.d0*w(i,j,k)+w(i,j,km))*ddxi
+            h32 = mu*(w(i,jp,k)-2.d0*w(i,j,k)+w(i,jm,k))*ddyi
+            h33 = mu*(w(i,j,kp)-2.d0*w(i,j,k)+w(i,j,km))*ddzi
             rhsu(i,j,k)=rhsu(i,j,k)+(h11+h12+h13)*rhoi
             rhsv(i,j,k)=rhsv(i,j,k)+(h21+h22+h23)*rhoi
             rhsw(i,j,k)=rhsw(i,j,k)+(h31+h32+h33)*rhoi
+            ! Pressure driven
+            rhsu(i,j,k)=rhsu(i,j,k) + 1.d0
          enddo
       enddo
    enddo
 
-   ! 5.1c NS forcing
-   !$acc kernels
-   do k = 1+halo_ext, piX%shape(3)-halo_ext
-      kg = piX%lo(3) + k - 1 
-      do j = 1+halo_ext, piX%shape(2)-halo_ext
-         jg = piX%lo(2) + j - 1 
-         do i = 1, piX%shape(1)
-            ! ABC forcing
-            rhsu(i,j,k)= rhsu(i,j,k) + f3*sin(k0*(x(kg)+dx/2))+f2*cos(k0*(x(jg)+dx/2))
-            rhsv(i,j,k)= rhsv(i,j,k) + f1*sin(k0*(x(i) +dx/2))+f3*cos(k0*(x(kg)+dx/2))
-            rhsw(i,j,k)= rhsw(i,j,k) + f2*sin(k0*(x(jg)+dx/2))+f1*cos(k0*(x(i) +dx/2))
-            ! TG Forcing
-            !rhsu(i,j,k)= rhsu(i,j,k) + f1*sin(k0*x(i))*cos(k0*x(j))*cos(k0*x(k))
-            !rhsv(i,j,k)= rhsv(i,j,k) - f1*cos(k0*x(i))*sin(k0*x(j))*sin(k0*x(k))
-         enddo
-      enddo
-   enddo
-   !$acc end kernels
+   ! Re-add here ST forces
 
-   ! Surface tension forces
-   #if phiflag == 1
-   !$acc kernels
-   !Obtain surface tension forces evaluated at the center of the cell (same as where phi is located)
-   do k=1+halo_ext, piX%shape(3)-halo_ext
-      do j=1+halo_ext, piX%shape(2)-halo_ext
-         do i=1,nx
-            ip=i+1
-            jp=j+1
-            kp=k+1
-            im=i-1
-            jm=j-1
-            km=k-1
-            if (ip .gt. nx) ip=1
-            if (im .lt. 1) im=nx
-            chempot(i,j,k)=phi(i,j,k)*(1.d0-phi(i,j,k))*(1.d0-2.d0*phi(i,j,k))*epsi-eps*(phi(ip,j,k)+phi(im,j,k)+phi(i,jp,k)+phi(i,jm,k)+phi(i,j,kp)+phi(i,j,km)- 6.d0*phi(i,j,k))*ddxi
-            fxst(i,j,k)=6.d0*sigma*chempot(i,j,k)*0.5d0*(phi(ip,j,k)-phi(im,j,k))*dxi
-            fyst(i,j,k)=6.d0*sigma*chempot(i,j,k)*0.5d0*(phi(i,jp,k)-phi(i,jm,k))*dxi
-            fzst(i,j,k)=6.d0*sigma*chempot(i,j,k)*0.5d0*(phi(i,jp,k)-phi(i,jm,k))*dxi
-         enddo
-      enddo
-   enddo
-   !$acc end kernels
-
-   ! Update halo of fxst, fyst and fzst (required then to interpolate at velocity points)
-   !$acc host_data use_device(fxst)
-   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, fxst, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
-   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, fxst, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
-   !$acc end host_data 
-   !$acc host_data use_device(fyst)
-   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, fyst, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
-   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, fyst, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
-   !$acc end host_data 
-   !$acc host_data use_device(fzst)
-   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, fzst, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
-   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, fzst, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
-   !$acc end host_data 
-   
-   ! Interpolate force at velocity points
-   !$acc kernels
-   do k=1+halo_ext, piX%shape(3)-halo_ext
-      do j=1+halo_ext, piX%shape(2)-halo_ext
-         do i=1,nx
-            im=i-1
-            jm=j-1
-            km=k-1
-            if (im .lt. 1) im=nx
-            rhsu(i,j,k)=rhsu(i,j,k) + 0.5d0*(fxst(im,j,k)+fxst(i,j,k))*rhoi
-            rhsv(i,j,k)=rhsv(i,j,k) + 0.5d0*(fyst(i,jm,k)+fyst(i,j,k))*rhoi
-            rhsw(i,j,k)=rhsw(i,j,k) + 0.5d0*(fzst(i,j,km)+fzst(i,j,k))*rhoi
-         enddo
-      enddo
-   enddo
-   !$acc end kernels   
-   #endif
-
-   ! 5.2 find u, v and w star (explicit Eulero), only in the inner nodes 
+   ! 5.2 find u, v and w star (AB2), only in the inner nodes 
    !$acc kernels
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
@@ -666,24 +640,23 @@ do t=tstart,tfin
    ! After first step move to AB2 
    alpha=1.5d0
    beta= 0.5d0
+   ! !$acc kernels
 
 
    ! 5.3 update halos (y and z directions), required to then compute the RHS of Poisson equation because of staggered grid
    !$acc host_data use_device(u)
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, u, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
-   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, u, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
    !$acc host_data use_device(v)
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, v, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
-   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, v, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
    !$acc host_data use_device(w)
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, w, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
-   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, w, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
    !########################################################################################################################################
    ! END STEP 5: USTAR COMPUTATION 
    !########################################################################################################################################
+   call nvtxEndRange
 
 
 
@@ -691,159 +664,138 @@ do t=tstart,tfin
 
 
 
-
-
+   call nvtxStartRange("Poisson")
    !########################################################################################################################################
    ! START STEP 6: POISSON SOLVER FOR PRESSURE
    !########################################################################################################################################
    ! initialize rhs and analytical solution
    ! 6.1 Compute rhs of Poisson equation div*ustar: divergence at the cell center 
    ! I've done the halo updates so to compute the divergence at the pencil border i have the *star from the halo
+   call nvtxStartRange("compute RHS")
+
+   ! impose BC on u,v and w at k=1 and kg=nz (for u and v) and kg=nz+1
+   do k=1, piX%shape(3)
+      do j=1, piX%shape(2)
+         do i=1,nx
+            ! bottom wall
+            kg = piX%lo(3)  + kl - 1
+            if (kg .eq. 1) then
+            u(i,j,k)=0.d0
+            v(i,j,k)=0.d0
+            w(i,j,k)=0.d0
+            endif
+            if (kg .eq. nz) then
+            u(i,j,k)=0.d0
+            v(i,j,k)=0.d0
+            endif
+            if (kg .eq. nz+1) then
+            w(i,j,k)=0.d0
+            endif
+         enddo
+      enddo
+   enddo
+
    !$acc kernels
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
-          do i=1,nx
-              ip=i+1
-              jp=j+1
-              kp=k+1
-              if (ip > nx) ip=1
-              rhsp(i,j,k) =               (rho*dxi/dt)*(u(ip,j,k)-u(i,j,k))
-              rhsp(i,j,k) = rhsp(i,j,k) + (rho*dxi/dt)*(v(i,jp,k)-v(i,j,k))
-              rhsp(i,j,k) = rhsp(i,j,k) + (rho*dxi/dt)*(w(i,j,kp)-w(i,j,k))
-          enddo
-      enddo
-   enddo
-   !$acc end kernels
-
-   ! Feed rhsp into the Poisson solver, this part can be optimized in the future (less copies of arrays)
-   !$acc kernels
-   do kl = 1+halo_ext, piX%shape(3)-halo_ext
-      !kg = piX%lo(3) + kl - 1 
-      do jl = 1+halo_ext, piX%shape(2)-halo_ext
-         !jg = piX%lo(2) + jl - 1 
-         do i = 1, piX%shape(1)
-            rhsp_complex(i,jl,kl) = cmplx(rhsp(i,jl,kl),0.0) !<- use this once solver is ok
-            !For Poisson testing (knwon solutions)
-            !rhsp_complex(i,jl,kl) = cmplx(sin(Mx*x(i)),0.0) 
-            !rhsp_complex(i,jl,kl) = cmplx(sin(Mx*x(i))*sin(My*x(jg))*sin(Mz*x(kg)),0.0)  ! RHS of Poisson equation
+         do i=1,nx
+            ip=i+1
+            jp=j+1
+            kp=k+1
+            if (ip > nx) ip=1
+            rhsp(i,j,k) =               (rho*dxi/dt)*(u(ip,j,k)-u(i,j,k))
+            rhsp(i,j,k) = rhsp(i,j,k) + (rho*dxi/dt)*(v(i,jp,k)-v(i,j,k))
+            rhsp(i,j,k) = rhsp(i,j,k) + (rho*dxi/dt)*(w(i,j,kp)-w(i,j,k))
          enddo
       enddo
    enddo
    !$acc end kernels
+   call nvtxEndRange
 
-   ! do the FFT3D forward 
-   ! psi(x,y,z) -> psi(kx,y,z)
-   !$acc host_data use_device(rhsp_complex)
-   status = cufftExecZ2Z(planX, rhsp_complex, psi_d, CUFFT_FORWARD)
-   if (status /= CUFFT_SUCCESS) write(*,*) 'X forward error: ', status
-   !$acc end host_data
-   ! psi(kx,y,z) -> psi(y,z,kx)
-   CHECK_CUDECOMP_EXIT(cudecompTransposeXToY(handle, grid_desc, psi_d, psi_d, work_d, CUDECOMP_DOUBLE_COMPLEX,Pix%halo_extents, [0,0,0]))
-   ! psi(y,z,kx) -> psi(ky,z,kx)
-   status = cufftExecZ2Z(planY, psi_d, psi_d, CUFFT_FORWARD)
-   if (status /= CUFFT_SUCCESS) write(*,*) 'Y forward error: ', status
-   ! psi(ky,z,kx) -> psi(z,kx,ky)
-   CHECK_CUDECOMP_EXIT(cudecompTransposeYToZ(handle, grid_desc, psi_d, psi_d, work_d, CUDECOMP_DOUBLE_COMPLEX))
-   ! psi(z,kx,ky) -> psi(kz,kx,ky)
-   status = cufftExecZ2Z(planZ, psi_d, psi_d, CUFFT_FORWARD)
-   if (status /= CUFFT_SUCCESS) write(*,*) 'Z forward error: ', status
-   ! END of FFT3D forward
 
-   block
-   complex(8), device, pointer :: psi3d(:,:,:)
-   real(8) :: k2
-   !integer :: il, jl, ig, jg
-   integer :: offsets(3), xoff, yoff
-   integer :: np(3)
-   np(piZ%order(1)) = piZ%shape(1)
-   np(piZ%order(2)) = piZ%shape(2)
-   np(piZ%order(3)) = piZ%shape(3)
-   call c_f_pointer(c_devloc(psi_d), psi3d, piZ%shape)
+   call nvtxStartRange("FFT forward w/ transpositions")
 
-   ! divide by -K**2, and normalize
-   offsets(piZ%order(1)) = piZ%lo(1) - 1
-   offsets(piZ%order(2)) = piZ%lo(2) - 1
-   offsets(piZ%order(3)) = piZ%lo(3) - 1
+     !$acc host_data use_device(rhsp)
+     status = cufftExecD2Z(planXf, rhsp, psi_d)
+     if (status /= CUFFT_SUCCESS) write(*,*) 'X forward error: ', status
+     !$acc end host_data
+     ! psi(kx,y,z) -> psi(y,z,kx)
+     CHECK_CUDECOMP_EXIT(cudecompTransposeXToY(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX,piX_d2z%halo_extents, [0,0,0]))
+     ! psi(y,z,kx) -> psi(ky,z,kx)
+     status = cufftExecZ2Z(planY, psi_d, psi_d, CUFFT_FORWARD)
+     if (status /= CUFFT_SUCCESS) write(*,*) 'Y forward error: ', status
+     ! psi(ky,z,kx) -> psi(z,kx,ky)
+     CHECK_CUDECOMP_EXIT(cudecompTransposeYToZ(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX)) 
 
-   xoff = offsets(1)
-   yoff = offsets(2)
-   npx = np(1)
-   npy = np(2)
-   !$acc kernels
-   do jl = 1, npy
-      do il = 1, npx
-         jg = yoff + jl
-         ig = xoff + il
-         do k = 1, nz
-            k2 = kx_d(ig)**2 + kx_d(jg)**2 + kx_d(k)**2
-            psi3d(k,il,jl) = -psi3d(k,il,jl)/k2/(int(nx,8)*int(ny,8)*int(nz,8))
+   call nvtxEndRange
+
+   !block
+    np(piZ_d2z%order(1)) = piZ_d2z%shape(1)
+    np(piZ_d2z%order(2)) = piZ_d2z%shape(2)
+    np(piZ_d2z%order(3)) = piZ_d2z%shape(3)
+    call c_f_pointer(c_devloc(psi_d), phi3d, piZ_d2z%shape)
+
+
+    ! divide by -K**2, and normalize
+
+    offsets(piZ_d2z%order(1)) = piZ_d2z%lo(1) - 1
+    offsets(piZ_d2z%order(2)) = piZ_d2z%lo(2) - 1
+    offsets(piZ_d2z%order(3)) = piZ_d2z%lo(3) - 1
+
+    xoff = offsets(1)
+    yoff = offsets(2)
+    npx = np(1)
+    npy = np(2)
+
+    call nvtxStartRange("Solution")
+
+      !$acc kernels
+      do jl = 1, npy
+        jg = yoff + jl
+         do il = 1, npx
+            ig = xoff + il
+            do k = 1, nz
+                k2 = kx_d(ig)**2 + ky_d(jg)**2   
+               ! Add here TDMA
+            enddo
          enddo
       enddo
-   enddo
-   !$acc end kernels
- 
-   ! specify mean (corrects division by zero wavenumber above)
-   if (xoff == 0 .and. yoff == 0) psi3d(1,1,1) = 0.0
-   end block
+      !$acc end kernels
 
-   ! psi(kz,kx,ky) -> psi(z,kx,ky)
-   status = cufftExecZ2Z(planZ, psi_d, psi_d, CUFFT_INVERSE)
-   if (status /= CUFFT_SUCCESS) write(*,*) 'Z inverse error: ', status
-   ! psi(z,kx,ky) -> psi(ky,z,kx)
-   CHECK_CUDECOMP_EXIT(cudecompTransposeZToY(handle, grid_desc, psi_d, psi_d, work_d, CUDECOMP_DOUBLE_COMPLEX))
-   ! psi(ky,z,kx) -> psi(y,z,kx)
-   status = cufftExecZ2Z(planY, psi_d, psi_d, CUFFT_INVERSE)
-   if (status /= CUFFT_SUCCESS) write(*,*) 'Y inverse error: ', status
-   ! psi(y,z,kx) -> psi(kx,y,z)
-   CHECK_CUDECOMP_EXIT(cudecompTransposeYToX(handle, grid_desc, psi_d, psi_d, work_d, CUDECOMP_DOUBLE_COMPLEX, [0,0,0], Pix%halo_extents))
-   ! psi(kx,y,z) -> psi(x,y,z)
-   !$acc host_data use_device(rhsp_complex)
-   status = cufftExecZ2Z(planX, psi_d, rhsp_complex, CUFFT_INVERSE)
-   if (status /= CUFFT_SUCCESS) write(*,*) 'X inverse error: ', status
-   !$acc end host_data
+    call nvtxEndRange
+   
+   !end block
 
-   ! update halo nodes with pressure (needed for the pressure correction step), using device variable no need to use host-data
-   ! Update X-pencil halos in Y and Z direction
-   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, rhsp_complex, work_halo_d, CUDECOMP_DOUBLE_COMPLEX, piX%halo_extents, halo_periods, 2))
-   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, rhsp_complex, work_halo_d, CUDECOMP_DOUBLE_COMPLEX, piX%halo_extents, halo_periods, 3))
+   call nvtxStartRange("FFT backwards along x and y w/ transpositions")
 
-   !D2H transfer
-   !psi = psi_d
+     ! psi(z,kx,ky) -> psi(ky,z,kx)
+     CHECK_CUDECOMP_EXIT(cudecompTransposeZToY(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX))
+     ! psi(ky,z,kx) -> psi(y,z,kx)
+     status = cufftExecZ2Z(planY, psi_d, psi_d, CUFFT_INVERSE)
+     if (status /= CUFFT_SUCCESS) write(*,*) 'Y inverse error: ', status
+     ! psi(y,z,kx) -> psi(kx,y,z)
+     CHECK_CUDECOMP_EXIT(cudecompTransposeYToX(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX,[0,0,0], piX_d2z%halo_extents))
+     !$acc host_data use_device(p)
+      ! psi(kx,y,z) -> psi(x,y,z)
+      status = cufftExecZ2D(planXb, psi_d, p)
+      if (status /= CUFFT_SUCCESS) write(*,*) 'X inverse error: ', status
+     !$acc end host_data
+      
+   call nvtxEndRange
 
+   ! update halo nodes with pressure (needed for the pressure correction step in y)
+   ! Update X-pencil halos in Y  direction
+   !$acc host_data use_device(p)
+    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, p, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
+   !$acc end host_data 
 
-   ! check against analytical solution
-   block
-   complex(8), pointer :: psi3(:,:,:)
-   real(8) :: err, maxErr = -1.0, err2
-   call c_f_pointer(c_loc(psi), psi3, [piX%shape(1), piX%shape(2), piX%shape(3)])
+   
 
-   !!Check errro on complex (ua and psi3 are complex)
-   !do kl = 1, piX%shape(3)
-   !   do jl = 1, piX%shape(2)
-   !      do i = 1, piX%shape(1)
-   !         err = abs(ua(i,jl,kl)-psi3(i,jl,kl))
-   !         if (err > maxErr) maxErr = err
-   !      enddo
-   !   enddo
-   !enddo
-
-   ! take back p from psi3
-   ! i can span also the halo because they have been already updated
-   !$acc kernels
-   do kl = 1, piX%shape(3)
-      do jl = 1, piX%shape(2)
-         do i = 1, piX%shape(1)
-            p(i,jl,kl) = real(rhsp_complex(i,jl,kl))
-         enddo
-      enddo
-   enddo
-   !$acc end kernels
-
-   end block
 
    !########################################################################################################################################
    ! END STEP 7: POISSON SOLVER FOR PRESSURE
    !########################################################################################################################################
+   call nvtxEndRange
 
 
 
@@ -851,17 +803,16 @@ do t=tstart,tfin
 
 
 
-
+   call nvtxStartRange("Correction")
    !########################################################################################################################################
    ! START STEP 8: VELOCITY CORRECTION
    ! ########################################################################################################################################
    ! 8.1 Correct velocity 
-   ! 8.2 Remove mean velocity if using ABC forcing
-   ! 8.3 Call halo exchnages along Y and Z for u,v,w
+   ! 8.2 Call halo exchnages along Y 
    ! Correct velocity, pressure has also the halo
    !$acc kernels 
-   do k = 1+halo_ext, piX%shape(3)-halo_ext
-      do j = 1+halo_ext, piX%shape(2)-halo_ext
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
          do i = 1, piX%shape(1) ! equal to nx (no halo on x)
               im=i-1
               jm=j-1
@@ -875,52 +826,38 @@ do t=tstart,tfin
    enddo
    !$acc end kernels 
 
-   ! Remove mean velocity (get local mean of the rank)
-   umean=0.d0
-   vmean=0.d0
-   wmean=0.d0
-   !$acc kernels 
-   do k = 1+halo_ext, piX%shape(3)-halo_ext
-      do j = 1+halo_ext, piX%shape(2)-halo_ext
-         do i = 1, piX%shape(1) ! equal to nx (no halo on x)
-              umean=umean + u(i,j,k)
-              vmean=vmean + v(i,j,k)
-              wmean=wmean + w(i,j,k)
-          enddo
-      enddo
-   enddo
-   !$acc end kernels 
-
-   ! Divide by total number of points in the pencil
-   umean=umean/nx/(piX%shape(2)-2*halo_ext)/(piX%shape(3)-2*halo_ext)
-   vmean=vmean/nx/(piX%shape(2)-2*halo_ext)/(piX%shape(3)-2*halo_ext)
-   wmean=wmean/nx/(piX%shape(2)-2*halo_ext)/(piX%shape(3)-2*halo_ext)
-
-   ! Find global mean (MPI_SUM and then divide by number of ranks)
-   call MPI_Allreduce(umean,gumean,1,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD, ierr)
-   call MPI_Allreduce(vmean,gvmean,1,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD, ierr)
-   call MPI_Allreduce(wmean,gwmean,1,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD, ierr)
-
-   ! remove mean value
-   !$acc kernels 
-   u=u-(gumean/ranks)
-   v=v-(gvmean/ranks)
-   w=w-(gwmean/ranks)
-   !$acc end kernels 
-
-   ! 8.3 update halos (y and z directions), required to then compute the RHS of Poisson equation because of staggered grid
+   ! 8.3 update halos (y direction), required to then compute the RHS of Poisson equation because of staggered grid
    !$acc host_data use_device(u)
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, u, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
-   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, u, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
    !$acc host_data use_device(v)
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, v, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
-   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, v, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
    !$acc host_data use_device(w)
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, w, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
-   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, w, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
+
+   ! Re-impose BC on u,v and w at k=1 and kg=nz (for u and v) and kg=nz+1
+   do k=1, piX%shape(3)
+      do j=1, piX%shape(2)
+         do i=1,nx
+            ! bottom wall
+            kg = piX%lo(3)  + kl - 1
+            if (kg .eq. 1) then
+            u(i,j,k)=0.d0
+            v(i,j,k)=0.d0
+            w(i,j,k)=0.d0
+            endif
+            if (kg .eq. nz) then
+            u(i,j,k)=0.d0
+            v(i,j,k)=0.d0
+            endif
+            if (kg .eq. nz+1) then
+            w(i,j,k)=0.d0
+            endif
+         enddo
+      enddo
+   enddo
 
    ! find local maximum velocity
    uc=maxval(u)
@@ -934,13 +871,13 @@ do t=tstart,tfin
       if (cou .gt. 7) stop
    endif
 
+
    call cpu_time(timef)
-   if (rank.eq.0) print '(" Time elapsed = ",f8.1," ms")',1000*(timef-times)
+   if (rank.eq.0) print '(" Time elapsed = ",f6.1," ms")',1000*(timef-times)
    !########################################################################################################################################
    ! END STEP 8: VELOCITY CORRECTION  
    !########################################################################################################################################
-
-
+   call nvtxEndRange
 
 
    !########################################################################################################################################
@@ -948,11 +885,11 @@ do t=tstart,tfin
    ! ########################################################################################################################################
    if (mod(t,dump) .eq. 0) then
       if (rank .eq. 0) write(*,*) "Saving output files"
-          ! write velocity and pressure fiels (1-4)
+         ! write velocity and pressure fiels (1-4)
          call writefield(t,1)
          call writefield(t,2)
          call writefield(t,3)
-         !call writefield(t,4)
+         call writefield(t,4)
          #if phiflag == 1
          ! write phase-field (5)
          call writefield(t,5)
@@ -962,14 +899,24 @@ do t=tstart,tfin
    ! END STEP 9: OUTPUT FIELDS N  
    !########################################################################################################################################
 
-
+call nvtxEndRange
+!call nvtxEndRange
 enddo
+call cpu_time(t_end)
+elapsed = t_end-t_start
+if (rank .eq. 0) write(*,*)  'Elapsed time (seconds):', elapsed
+!$acc end data
+!$acc end data
+!$acc end data
 
+! Remove allocated variables (add new)
 deallocate(u,v,w)
+deallocate(tanh_psi, mysin, mycos)
 deallocate(rhsu,rhsv,rhsw)
 deallocate(rhsu_o,rhsv_o,rhsw_o)
-deallocate(phi,rhsphi,rhsphi_o,normx,normy,normz)
+deallocate(phi,rhsphi,normx,normy,normz)
 
 call mpi_finalize(ierr)
 
 end program main
+
