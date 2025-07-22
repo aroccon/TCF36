@@ -1,6 +1,7 @@
 module param
-    integer, parameter :: nx=512
-    integer :: ny=nx,nz=nx
+    integer, parameter :: nx=64
+    integer, parameter :: ny=64
+    integer, parameter :: nz=64
     double precision :: pi, rhoi, twopi
     double precision :: lx, dx, dxi, ddxi 
     double precision :: ly, dy, dyi, ddyi

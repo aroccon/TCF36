@@ -14,11 +14,11 @@ If you use this code, please cite the following work:
 ```
 
 
-## Check list of features implemented in TCF36
-- Boundary condtion for no-slip at the two wall 🚧
-- Laminar solution (no need of TDMA) 🚧
+## Check list of TCF36
+- Boundary condition for no-slip at the two walls ✅
+- Laminar solution (no need of TDMA) ✅
 - TDMA 🚧
-- Turbuletn channel flow 🚧
+- Turbulent channel flow 🚧
 - Stretched grids 🚧
 
 ## Run the code
@@ -29,15 +29,7 @@ If you use this code, please cite the following work:
 - Autotuning of the multi-GPU version: Default pr=0 and pc=0 enables autotuging (when cuDecomp is initialized), cuDecomp will perform an autotuning at the start finding the best decomposition (the only input is the total number of tasks). In this way, everyhting is automatic and the code does not need to be recompiled when changing the number of MPI processes.
 - A conditional compilation flag is used to enable or not the phase-field module. By default is single-phase only.
 
-
-## Validation
-
-Benchamrk present in "W.M.VanRees, A.Leonard, D.Pullin, P.Koumoutsakos, A comparison of vortex and pseudo-spectral methods for the simulation of periodic vortical flows at high Reynolds numbers,J. Comput. Phys.2 30(8)(2011)2794–2805" and also Used in CaNS.
-
-Time evolution of the viscous dissipation:
-
-![Test](val/val.png)
-
+## Validation 
 
 ## Contributing
 

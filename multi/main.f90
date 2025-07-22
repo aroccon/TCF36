@@ -636,18 +636,25 @@ do t=tstart,tfin
    enddo
    !$acc end kernels
 
+   ! store rhs* in rhs*_o 
    ! After first step move to AB2 
    alpha=1.5d0
    beta= 0.5d0
+   ! !$acc kernels
+
+
    ! 5.3 update halos (y and z directions), required to then compute the RHS of Poisson equation because of staggered grid
    !$acc host_data use_device(u)
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, u, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
+   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, u, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
    !$acc host_data use_device(v)
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, v, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
+   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, v, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
    !$acc host_data use_device(w)
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, w, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
+   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, w, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
    !########################################################################################################################################
    ! END STEP 5: USTAR COMPUTATION 
@@ -670,12 +677,13 @@ do t=tstart,tfin
    call nvtxStartRange("compute RHS")
 
    ! impose BC on u,v and w at k=1 and kg=nz (for u and v) and kg=nz+1
+   ! can be improved as the bottom one
    !$acc kernels
    do k=1, piX%shape(3)
       do j=1, piX%shape(2)
          do i=1,nx
             ! bottom wall
-            kg = piX%lo(3)  + kl - 1
+            kg = piX%lo(3)  + k -2
             if (kg .eq. 1) then
             u(i,j,k)=0.d0
             v(i,j,k)=0.d0
@@ -711,19 +719,19 @@ do t=tstart,tfin
    call nvtxEndRange
 
 
-   call nvtxStartRange("FFT 2D FWD + transpositions")
+   call nvtxStartRange("FFT forward w/ transpositions")
 
-   !$acc host_data use_device(rhsp)
-   status = cufftExecD2Z(planXf, rhsp, psi_d)
-   if (status /= CUFFT_SUCCESS) write(*,*) 'X forward error: ', status
-   !$acc end host_data
-   ! psi(kx,y,z) -> psi(y,z,kx)
-   CHECK_CUDECOMP_EXIT(cudecompTransposeXToY(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX,piX_d2z%halo_extents, [0,0,0]))
-   ! psi(y,z,kx) -> psi(ky,z,kx)
-   status = cufftExecZ2Z(planY, psi_d, psi_d, CUFFT_FORWARD)
-   if (status /= CUFFT_SUCCESS) write(*,*) 'Y forward error: ', status
-   ! psi(ky,z,kx) -> psi(z,kx,ky)
-   CHECK_CUDECOMP_EXIT(cudecompTransposeYToZ(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX)) 
+     !$acc host_data use_device(rhsp)
+     status = cufftExecD2Z(planXf, rhsp, psi_d)
+     if (status /= CUFFT_SUCCESS) write(*,*) 'X forward error: ', status
+     !$acc end host_data
+     ! psi(kx,y,z) -> psi(y,z,kx)
+     CHECK_CUDECOMP_EXIT(cudecompTransposeXToY(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX,piX_d2z%halo_extents, [0,0,0]))
+     ! psi(y,z,kx) -> psi(ky,z,kx)
+     status = cufftExecZ2Z(planY, psi_d, psi_d, CUFFT_FORWARD)
+     if (status /= CUFFT_SUCCESS) write(*,*) 'Y forward error: ', status
+     ! psi(ky,z,kx) -> psi(z,kx,ky)
+     CHECK_CUDECOMP_EXIT(cudecompTransposeYToZ(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX)) 
 
    call nvtxEndRange
 
@@ -764,28 +772,31 @@ do t=tstart,tfin
    
    !end block
 
-   call nvtxStartRange("FFT 2D BACK + transpositions")
+   call nvtxStartRange("FFT backwards along x and y w/ transpositions")
 
-   ! psi(z,kx,ky) -> psi(ky,z,kx)
-   CHECK_CUDECOMP_EXIT(cudecompTransposeZToY(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX))
-   ! psi(ky,z,kx) -> psi(y,z,kx)
-   status = cufftExecZ2Z(planY, psi_d, psi_d, CUFFT_INVERSE)
-   if (status /= CUFFT_SUCCESS) write(*,*) 'Y inverse error: ', status
-   ! psi(y,z,kx) -> psi(kx,y,z)
-   CHECK_CUDECOMP_EXIT(cudecompTransposeYToX(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX,[0,0,0], piX_d2z%halo_extents))
-   !$acc host_data use_device(p)
-   ! psi(kx,y,z) -> psi(x,y,z)
-   status = cufftExecZ2D(planXb, psi_d, p)
-   if (status /= CUFFT_SUCCESS) write(*,*) 'X inverse error: ', status
-   !$acc end host_data
+     ! psi(z,kx,ky) -> psi(ky,z,kx)
+     CHECK_CUDECOMP_EXIT(cudecompTransposeZToY(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX))
+     ! psi(ky,z,kx) -> psi(y,z,kx)
+     status = cufftExecZ2Z(planY, psi_d, psi_d, CUFFT_INVERSE)
+     if (status /= CUFFT_SUCCESS) write(*,*) 'Y inverse error: ', status
+     ! psi(y,z,kx) -> psi(kx,y,z)
+     CHECK_CUDECOMP_EXIT(cudecompTransposeYToX(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX,[0,0,0], piX_d2z%halo_extents))
+     !$acc host_data use_device(p)
+      ! psi(kx,y,z) -> psi(x,y,z)
+      status = cufftExecZ2D(planXb, psi_d, p)
+      if (status /= CUFFT_SUCCESS) write(*,*) 'X inverse error: ', status
+     !$acc end host_data
       
    call nvtxEndRange
 
-   ! update halo nodes with pressure (needed for the pressure correction step in y)
-   ! Update X-pencil halos in Y  direction
+   ! update halo nodes with pressure 
+   ! Update X-pencil halos 
    !$acc host_data use_device(p)
     CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, p, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
-   !$acc end host_data 
+    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, p, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
+    !$acc end host_data 
+
+   
 
 
    !########################################################################################################################################
@@ -825,21 +836,25 @@ do t=tstart,tfin
    ! 8.3 update halos (y direction), required to then compute the RHS of Poisson equation because of staggered grid
    !$acc host_data use_device(u)
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, u, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
+   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, u, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
    !$acc host_data use_device(v)
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, v, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
+   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, v, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
    !$acc host_data use_device(w)
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, w, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
+   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, w, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
 
    ! Re-impose BC on u,v and w at k=1 and kg=nz (for u and v) and kg=nz+1
+   ! can be improved accessing directly kg?
    !$acc kernels
    do k=1, piX%shape(3)
       do j=1, piX%shape(2)
          do i=1,nx
             ! bottom wall
-            kg = piX%lo(3)  + kl - 1
+            kg = piX%lo(3)  + k - 2
             if (kg .eq. 1) then
             u(i,j,k)=0.d0
             v(i,j,k)=0.d0
