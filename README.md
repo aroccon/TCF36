@@ -17,7 +17,8 @@ If you use this code, please cite the following work:
 ## Check list of TCF36
 - Boundary condition for no-slip at the two walls ✅
 - Laminar solution (no need of TDMA) ✅
-- TDMA 🚧
+- TDMA ✅
+- TDMA validation 🚧
 - Turbulent channel flow 🚧
 - Stretched grids 🚧
 
