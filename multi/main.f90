@@ -33,7 +33,7 @@ integer :: inY,enY,inZ,enZ
 !beginDEBUG
 integer, parameter :: Mx = 1, My = 2, Mz = 1
 !endDEBUG
-real(8), device, allocatable :: kx_d(:),ky_d(:)
+real(8), device, allocatable :: kx_d(:), ky_d(:)
 ! working arrays
 complex(8), allocatable :: psi(:)
 real(8), allocatable :: ua(:,:,:)
@@ -738,15 +738,10 @@ do t=tstart,tfin
    !block
     np(piZ_d2z%order(1)) = piZ_d2z%shape(1)
     np(piZ_d2z%order(2)) = piZ_d2z%shape(2)
-    np(piZ_d2z%order(3)) = piZ_d2z%shape(3)
     call c_f_pointer(c_devloc(psi_d), phi3d, piZ_d2z%shape)
-
-
-    ! divide by -K**2, and normalize
 
     offsets(piZ_d2z%order(1)) = piZ_d2z%lo(1) - 1
     offsets(piZ_d2z%order(2)) = piZ_d2z%lo(2) - 1
-    offsets(piZ_d2z%order(3)) = piZ_d2z%lo(3) - 1
 
     xoff = offsets(1)
     yoff = offsets(2)
@@ -755,18 +750,63 @@ do t=tstart,tfin
 
     call nvtxStartRange("Solution")
 
-      !$acc kernels
-      do jl = 1, npy
-        jg = yoff + jl
-         do il = 1, npx
-            ig = xoff + il
-            do k = 1, nz
-                k2 = kx_d(ig)**2 + ky_d(jg)**2   
-               ! Add here TDMA
-            enddo
+   !$acc parallel loop gang private(a, b, c, d, sol, factor)
+   do jl = 1, npy
+      jg = yoff + jl
+      do il = 1, npx
+         ig = xoff + il
+         ! Set up tridiagonal system for each kx
+         ! The system is: (A_j) * pc(kx,j-1) + (B_j) * pc(kx,j) + (C_j) * pc(kx,j+1) = rhs(kx,j)
+         ! FD2: -pc(j-1) + 2*pc(j) - pc(j+1)  --> Laplacian in y
+         ! Neumann BC: d/dy pc = 0 at j=1 and j=ny
+         ! Fill diagonals and rhs for each y
+         do k = 1, nz
+            a(k) =  1.0d0*dzi*dzi
+            b(k) = -2.0d0*dzi*dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
+            c(k) =  1.0d0*dzi*dzi
+            d(k) =  phi3d(k,il,jl)
          enddo
+
+         ! Neumann BC at k=1 (bottom)
+         b(1) = -2.0d0*dzi*dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
+         c(1) =  2.0d0*dzi*dzi
+         a(1) =  0.0d0
+
+         ! Neumann BC at j=ny (top)
+         a(nz) =  2.0d0*dzi*dzi
+         b(nz) = -2.0d0*dzi*dzi -- kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
+         c(nz) =  0.0d0
+
+         ! Special handling for kx=0 (mean mode)
+         ! fix pressure on one point (otherwise is zero mean along x)
+         if (i == 1) then
+            b(1) = 1.0d0
+            c(1) = 0.0d0
+            d(1) = 0.0d0
+         endif
+
+         ! Thomas algorithm (TDMA) for tridiagonal system 
+         ! Forward sweep
+         do k = 2, nz
+            factor = a(k)/b(k-1)
+            b(k) = b(k) - factor * c(k-1)
+            d(k) = d(k) - factor * d(k-1)
+         enddo
+
+         ! Back substitution
+         sol(nz) = d(nz) / b(nz)
+         do k = nz-1, 1, -1
+            sol(k) = (d(k) - c(k) * sol(k+1)) / b(k)
+         end do
+
+         ! Store solution in array that do the back FFT
+         do k = 1, nz
+            phi3d(k,il,jl) = sol(k)/(int(nx,8)*int(ny,8))
+         enddo
+
       enddo
-      !$acc end kernels
+   enddo
+
 
     call nvtxEndRange
    
