@@ -30,15 +30,12 @@ real(8), allocatable :: x(:), y(:), z(:), kx(:), ky(:)
 integer :: i,j,k,il,jl,kl,ig,jg,kg,t
 integer :: im,ip,jm,jp,km,kp,last
 integer :: inY,enY,inZ,enZ
-!beginDEBUG
-integer, parameter :: Mx = 1, My = 2, Mz = 1
-!endDEBUG
+double complex :: a(nz), b(nz), c(nz), d(nz), sol(nz), meanp(nz)
 real(8), device, allocatable :: kx_d(:), ky_d(:)
 ! working arrays
 complex(8), allocatable :: psi(:)
 real(8), allocatable :: ua(:,:,:)
 real(8), allocatable :: uaa(:,:,:)
-
 real(8), allocatable :: psi_real(:)
 ! real(8), device, allocatable :: psi_real_d(:)
 complex(8), device, allocatable :: psi_d(:)
@@ -46,9 +43,7 @@ complex(8), pointer, device, contiguous :: work_d(:), work_halo_d(:), work_d_d2z
 character(len=40) :: namefile
 character(len=4) :: itcount
 ! Code variables
-
 real(8)::err,maxErr
-
 complex(8), device, pointer :: phi3d(:,:,:)
 real(8) :: k2
 !integer :: il, jl, ig, jg
@@ -779,7 +774,7 @@ do t=tstart,tfin
 
          ! Special handling for kx=0 (mean mode)
          ! fix pressure on one point (otherwise is zero mean along x)
-         if (i == 1) then
+         if ((ig .eq. 1) .and. (jg .eq. 1)) then
             b(1) = 1.0d0
             c(1) = 0.0d0
             d(1) = 0.0d0
