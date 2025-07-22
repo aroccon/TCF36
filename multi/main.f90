@@ -28,9 +28,8 @@ integer :: status
 ! other variables (wavenumber, grid location)
 real(8), allocatable :: x(:), y(:), z(:), kx(:), ky(:)
 integer :: i,j,k,il,jl,kl,ig,jg,kg,t
-integer :: im,ip,jm,jp,km,kp,last
-integer :: inY,enY,inZ,enZ
-double complex :: a(nz), b(nz), c(nz), d(nz), sol(nz), meanp(nz)
+integer :: im,ip,jm,jp,km,kp,last,idx
+double complex :: a(nz), b(nz), c(nz), d(nz), sol(nz)
 real(8), device, allocatable :: kx_d(:), ky_d(:)
 ! working arrays
 complex(8), allocatable :: psi(:)
@@ -51,7 +50,7 @@ integer :: offsets(3), xoff, yoff
 integer :: np(3)
 
 ! Enable or disable phase field (acceleration eneabled by default)
-#define phiflag 0
+#define phiflag 1
 
 !########################################################################################################################################
 ! 1. INITIALIZATION OF MPI AND cuDECOMP AUTOTUNING : START
@@ -228,14 +227,15 @@ do i = nx/2+1, nx
    kx(i) = (i-1-nx)*(twopi/lx)
 enddo
 do j = 1, ny/2
-   ky(i) = (j-1)*(twopi/ly)
+   ky(j) = (j-1)*(twopi/ly)
 enddo
 do j = ny/2+1, ny
-   ky(i) = (j-1-ny)*(twopi/ly)
+   ky(j) = (j-1-ny)*(twopi/ly)
 enddo
 ! allocate kx_d and ky_d on the device 
-allocate(kx_d, source=kx)
-allocate(ky_d, source=ky)
+!allocate(kx_d, source=kx)
+!allocate(ky_d, source=ky)
+
 !########################################################################################################################################
 ! 1. INITIALIZATION AND cuDECOMP AUTOTUNING : END
 !########################################################################################################################################
@@ -351,7 +351,7 @@ if (rank.eq.0) write(*,*) 'Initialize phase field (fresh start)'
          do j = 1+halo_ext, piX%shape(2)-halo_ext
          jg = piX%lo(2) + j - 1 
             do i = 1, piX%shape(1)
-                pos=(x(i)-lx/2)**2d0 +  (x(jg)-lx/2)**2d0 + (x(kg)-lx/2)**2d0
+                pos=(x(i)-lx/2)**2d0 +  (y(jg)-ly/2)**2d0 + (z(kg)-lz/2)**2d0
                 phi(i,j,k) = 0.5d0*(1.d0-tanh((sqrt(pos)-radius)/2/eps))
             enddo
         enddo
@@ -436,6 +436,7 @@ do t=tstart,tfin
    enddo
    !$acc end kernels
 
+   gamma=1.d0*gumax
    !$acc parallel loop tile(16,4,2)
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
@@ -608,14 +609,77 @@ do t=tstart,tfin
             rhsv(i,j,k)=rhsv(i,j,k)+(h21+h22+h23)*rhoi
             rhsw(i,j,k)=rhsw(i,j,k)+(h31+h32+h33)*rhoi
             ! Pressure driven
-            rhsu(i,j,k)=rhsu(i,j,k) + 1.d0
+            rhsu(i,j,k)=rhsu(i,j,k) !+ 1.d0
          enddo
       enddo
    enddo
 
    ! Re-add here ST forces
 
-   ! 5.2 find u, v and w star (AB2), only in the inner nodes 
+   ! Surface tension forces
+   #if phiflag == 1
+   !$acc kernels
+   !Obtain surface tension forces evaluated at the center of the cell (same as where phi is located)
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
+         do i=1,nx
+            ip=i+1
+            jp=j+1
+            kp=k+1
+            im=i-1
+            jm=j-1
+            km=k-1
+            if (ip .gt. nx) ip=1
+            if (im .lt. 1) im=nx
+            chempot=phi(i,j,k)*(1.d0-phi(i,j,k))*(1.d0-2.d0*phi(i,j,k))*epsi-eps*(phi(ip,j,k)+phi(im,j,k)+phi(i,jp,k)+phi(i,jm,k)+phi(i,j,kp)+phi(i,j,km)- 6.d0*phi(i,j,k))*ddxi
+            ! chempot*gradphi
+            fxst(i,j,k)=6.d0*sigma*chempot*0.5d0*(phi(ip,j,k)-phi(im,j,k))*dxi
+            fyst(i,j,k)=6.d0*sigma*chempot*0.5d0*(phi(i,jp,k)-phi(i,jm,k))*dxi
+            fzst(i,j,k)=6.d0*sigma*chempot*0.5d0*(phi(i,j,kp)-phi(i,j,km))*dxi
+         enddo
+      enddo
+   enddo
+   !$acc end kernels
+
+   ! Update halo of fxst, fyst and fzst (required then to interpolate at velocity points)
+   !$acc host_data use_device(fxst)
+   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, fxst, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
+   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, fxst, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
+   !$acc end host_data 
+   !$acc host_data use_device(fyst)
+   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, fyst, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
+   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, fyst, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
+   !$acc end host_data 
+   !$acc host_data use_device(fzst)
+   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, fzst, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
+   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, fzst, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
+   !$acc end host_data 
+   
+   ! Interpolate force at velocity points
+   !$acc kernels
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
+         do i=1,nx
+            im=i-1
+            jm=j-1
+            km=k-1
+            if (im .lt. 1) im=nx
+            rhsu(i,j,k)=rhsu(i,j,k) + 0.5d0*(fxst(im,j,k)+fxst(i,j,k))*rhoi
+            rhsv(i,j,k)=rhsv(i,j,k) + 0.5d0*(fyst(i,jm,k)+fyst(i,j,k))*rhoi
+            rhsw(i,j,k)=rhsw(i,j,k) + 0.5d0*(fzst(i,j,km)+fzst(i,j,k))*rhoi
+            u(i,j,k) = u(i,j,k) + dt*(alpha*rhsu(i,j,k)-beta*rhsu_o(i,j,k))
+            v(i,j,k) = v(i,j,k) + dt*(alpha*rhsv(i,j,k)-beta*rhsv_o(i,j,k))
+            w(i,j,k) = w(i,j,k) + dt*(alpha*rhsw(i,j,k)-beta*rhsw_o(i,j,k))
+            rhsu_o(i,j,k)=rhsu(i,j,k)
+            rhsv_o(i,j,k)=rhsv(i,j,k)
+            rhsw_o(i,j,k)=rhsw(i,j,k)
+          enddo
+      enddo
+   enddo
+   !$acc end kernels
+
+   #else
+   ! 5.2 find u, v and w star (explicit AB2), only in the inner nodes 
    !$acc kernels
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
@@ -630,6 +694,7 @@ do t=tstart,tfin
       enddo
    enddo
    !$acc end kernels
+   #endif
 
    ! store rhs* in rhs*_o 
    ! After first step move to AB2 
@@ -707,6 +772,7 @@ do t=tstart,tfin
             rhsp(i,j,k) =               (rho*dxi/dt)*(u(ip,j,k)-u(i,j,k))
             rhsp(i,j,k) = rhsp(i,j,k) + (rho*dxi/dt)*(v(i,jp,k)-v(i,j,k))
             rhsp(i,j,k) = rhsp(i,j,k) + (rho*dxi/dt)*(w(i,j,kp)-w(i,j,k))
+            !rhsp(i,j,k) = 0.d0
          enddo
       enddo
    enddo
@@ -745,34 +811,35 @@ do t=tstart,tfin
 
     call nvtxStartRange("Solution")
 
-   !$acc parallel loop gang private(a, b, c, d, sol, factor)
+   !!!$acc parallel loop gang private(a, b, c, d, sol, factor)
+   !!$acc kernels
    do jl = 1, npy
       jg = yoff + jl
       do il = 1, npx
          ig = xoff + il
          ! Set up tridiagonal system for each kx
          ! The system is: (A_j) * pc(kx,j-1) + (B_j) * pc(kx,j) + (C_j) * pc(kx,j+1) = rhs(kx,j)
-         ! FD2: -pc(j-1) + 2*pc(j) - pc(j+1)  --> Laplacian in y
-         ! Neumann BC: d/dy pc = 0 at j=1 and j=ny
-         ! Fill diagonals and rhs for each y
+         ! FD2 in z: -pc(k-1) + 2*pc(k) - pc(k+1)  --> Laplacian in z
+         ! Neumann BC: d/dz pc = 0 at k=1 and k=nz
+         ! Fill diagonals and rhs for each k
          do k = 1, nz
             a(k) =  1.0d0*dzi*dzi
-            b(k) = -2.0d0*dzi*dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
+            b(k) = -2.0d0*dzi*dzi - kx(ig)*kx(ig) - ky(jg)*ky(jg)
             c(k) =  1.0d0*dzi*dzi
-            d(k) =  phi3d(k,il,jl)
+            !d(k) =  0.d0!phi3d(k,il,jl)
          enddo
 
          ! Neumann BC at k=1 (bottom)
-         b(1) = -2.0d0*dzi*dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
+         b(1) = -2.0d0*dzi*dzi - kx(ig)*kx(ig) - ky(jg)*ky(jg)
          c(1) =  2.0d0*dzi*dzi
          a(1) =  0.0d0
 
          ! Neumann BC at j=ny (top)
          a(nz) =  2.0d0*dzi*dzi
-         b(nz) = -2.0d0*dzi*dzi -- kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
+         b(nz) = -2.0d0*dzi*dzi - kx(ig)*kx(ig) - ky(jg)*ky(jg)
          c(nz) =  0.0d0
 
-         ! Special handling for kx=0 (mean mode)
+         ! Special handling for kx=0 and ky=0 (mean mode)
          ! fix pressure on one point (otherwise is zero mean along x)
          if ((ig .eq. 1) .and. (jg .eq. 1)) then
             b(1) = 1.0d0
@@ -782,25 +849,26 @@ do t=tstart,tfin
 
          ! Thomas algorithm (TDMA) for tridiagonal system 
          ! Forward sweep
-         do k = 2, nz
+         do k=2,nz
             factor = a(k)/b(k-1)
             b(k) = b(k) - factor * c(k-1)
             d(k) = d(k) - factor * d(k-1)
          enddo
 
          ! Back substitution
-         sol(nz) = d(nz) / b(nz)
+         sol(nz) = d(nz)/b(nz)
          do k = nz-1, 1, -1
-            sol(k) = (d(k) - c(k) * sol(k+1)) / b(k)
+            sol(k) = (d(k) - c(k)*sol(k+1))/b(k)
          end do
 
          ! Store solution in array that do the back FFT
-         do k = 1, nz
-            phi3d(k,il,jl) = sol(k)/(int(nx,8)*int(ny,8))
+         do k=1,nz
+            phi3d(k,il,jl) = 0.d0!sol(k)
          enddo
 
       enddo
    enddo
+   !!$acc end kernels
 
 
     call nvtxEndRange
@@ -821,8 +889,21 @@ do t=tstart,tfin
       status = cufftExecZ2D(planXb, psi_d, p)
       if (status /= CUFFT_SUCCESS) write(*,*) 'X inverse error: ', status
      !$acc end host_data
+
+   ! normalize pressure
+   !$acc kernels
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
+         do i=1,nx
+            p(i,j,k) = p(i,j,k)/nx/ny
+         enddo
+      enddo
+   enddo
+   !$acc end kernels
       
    call nvtxEndRange
+
+
 
    ! update halo nodes with pressure 
    ! Update X-pencil halos 

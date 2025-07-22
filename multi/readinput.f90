@@ -33,8 +33,8 @@ read(55,*) epsr
 
 ! compute pre-defined constant 
 twopi=8.0_8*atan(1.0_8)
-lx=2.d0*twopi
-ly=twopi
+lx=2.d0!*twopi
+ly=2.d0!twopi
 lz=2.d0
 dx = lx/nx
 dy = ly/ny
@@ -78,6 +78,12 @@ if (rank .eq. 0) then
     write(*,*) "dx", dx
     write(*,*) "dxi", dxi
     write(*,*) "ddxi", ddxi
+    write(*,*) "dy", dx
+    write(*,*) "dyi", dyi
+    write(*,*) "ddyi", ddyi
+    write(*,*) "dz", dz
+    write(*,*) "dzi", dzi
+    write(*,*) "ddzi", ddzi
     write(*,*) "rhoi", rhoi
 endif
 
