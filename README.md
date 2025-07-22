@@ -31,6 +31,9 @@ If you use this code, please cite the following work:
 
 ## Validation 
 
+![Test](val/val.png)
+
+
 ## Contributing
 
 We welcome all contributions that can enhance MHIT36, including bug fixes, performance improvements, and new features. 
