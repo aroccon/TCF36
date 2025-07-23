@@ -21,10 +21,8 @@ read(55,*) dt
 read(55,*) mu
 read(55,*) rho
 ! forcing parameters
-read(55,*) f1
-read(55,*) f2
-read(55,*) f3
-read(55,*) k0
+read(55,*) gradpx
+read(55,*) gradpy
 ! phase-field parameters
 read(55,*) radius
 read(55,*) sigma
@@ -69,7 +67,8 @@ if (rank .eq. 0) then
     write(*,*) "Deltat  ", dt
     write(*,*) "Mu      ", mu
     write(*,*) "Rho     ", rho
-    write(*,*) "f1,f2,f3,k0", f1,f2,f3,k0
+    write(*,*) "Gradpx  ", gradpx
+    write(*,*) "Gradpy  ", gradpy
     write(*,*) "Radius  ", radius
     write(*,*) "Sigma   ", sigma
     write(*,*) "Eps     ", eps

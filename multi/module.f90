@@ -1,7 +1,7 @@
 module param
     integer, parameter :: nx=64
-    integer, parameter :: ny=64
-    integer, parameter :: nz=64
+    integer, parameter :: ny=nx
+    integer, parameter :: nz=nx
     double precision :: pi, rhoi, twopi
     double precision :: lx, dx, dxi, ddxi 
     double precision :: ly, dy, dyi, ddyi
@@ -10,9 +10,9 @@ module param
     double precision :: gamma, normod, factor
     double precision :: dt,mu,rho !flow parameters
     integer :: inflow, inphi
-    double precision :: f1,f2,f3,k0 ! forcing parameters
     double precision :: radius, sigma, epsr, eps, pos, val, epsi, enum ! phase-field parameters
     double precision :: times,timef
+    double precision :: gradpx, gradpy
 end module param
 
 

@@ -69,8 +69,8 @@ ierr = cudaSetDevice(localRank) !assign GPU to MPI rank
 call readinput
 
 ! hard coded
-pr = 0
-pc = 0
+pr = 1
+pc = 2
 halo_ext=1
 ! comm_backend = CUDECOMP_TRANSPOSE_COMM_MPI_P2P
 comm_backend = 0 ! Enable full autotuning
@@ -183,6 +183,7 @@ CHECK_CUDECOMP_EXIT(cudecompGetTransposeWorkspaceSize(handle, grid_descD2Z, nEle
 CHECK_CUDECOMP_EXIT(cudecompGetHaloWorkspaceSize(handle, grid_descD2Z, 1, halo, nElemWork_halo_d2z))
 
 
+   write(*,*) "piZ_d2z_lo", piZ_d2z%lo
 
 
 
@@ -239,7 +240,6 @@ allocate(ky_d, source=ky)
 !########################################################################################################################################
 ! 1. INITIALIZATION AND cuDECOMP AUTOTUNING : END
 !########################################################################################################################################
-
 
 
 
@@ -326,6 +326,7 @@ if (restart .eq. 1) then !restart, ignore inflow and read the tstart field
    call readfield_restart(tstart,3)
 endif
 
+
 ! update halo cells along y and z directions (enough only if pr and pc are non-unitary)
 !$acc host_data use_device(u)
 CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, u, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
@@ -387,7 +388,6 @@ endif
 !########################################################################################################################################
 ! END STEP 3: FLOW AND PHASE FIELD INIT
 !########################################################################################################################################
-
 
 
 
@@ -609,7 +609,8 @@ do t=tstart,tfin
             rhsv(i,j,k)=rhsv(i,j,k)+(h21+h22+h23)*rhoi
             rhsw(i,j,k)=rhsw(i,j,k)+(h31+h32+h33)*rhoi
             ! Pressure driven
-            rhsu(i,j,k)=rhsu(i,j,k) !+ 1.d0
+            rhsu(i,j,k)=rhsu(i,j,k) + gradpx
+            rhsv(i,j,k)=rhsv(i,j,k) + gradpy
          enddo
       enddo
    enddo
@@ -796,23 +797,28 @@ do t=tstart,tfin
 
    call nvtxEndRange
 
+
    np(piZ_d2z%order(1)) = piZ_d2z%shape(1)
    np(piZ_d2z%order(2)) = piZ_d2z%shape(2)
    np(piZ_d2z%order(3)) = piZ_d2z%shape(3)
+   
    call c_f_pointer(c_devloc(psi_d), psi3d, piZ_d2z%shape)
 
    offsets(piZ_d2z%order(1)) = piZ_d2z%lo(1) - 1
    offsets(piZ_d2z%order(2)) = piZ_d2z%lo(2) - 1
+   offsets(piZ_d2z%order(3)) = piZ_d2z%lo(3) - 1
+
 
    xoff = offsets(1)
    yoff = offsets(2)
    npx = np(1)
    npy = np(2)
+   !write(*,*) "xoff, yoff", xoff, yoff
 
    call nvtxStartRange("Solution")
 
-   !!$acc parallel loop gang private(a, b, c, d, sol, factor)   
-   !$acc kernels
+   !$acc parallel loop gang private(a, b, c, d, sol, factor)   
+   !!$acc kernels ! kernels is safer but serialized the TDMA, rememeber a-d private if using parallel loop
    do jl = 1, npy
       jg = yoff + jl
       do il = 1, npx
@@ -867,7 +873,7 @@ do t=tstart,tfin
          enddo      
       enddo
    enddo
-   !$acc end kernels
+   !!$acc end kernels
 
 
    call nvtxStartRange("FFT backwards along x and y w/ transpositions")
@@ -1043,4 +1049,3 @@ deallocate(phi,rhsphi,normx,normy,normz)
 call mpi_finalize(ierr)
 
 end program main
-
