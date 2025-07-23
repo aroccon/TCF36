@@ -43,7 +43,7 @@ character(len=40) :: namefile
 character(len=4) :: itcount
 ! Code variables
 real(8)::err,maxErr
-complex(8), device, pointer :: phi3d(:,:,:)
+complex(8), device, pointer :: psi3d(:,:,:)
 real(8) :: k2
 !integer :: il, jl, ig, jg
 integer :: offsets(3), xoff, yoff
@@ -233,8 +233,8 @@ do j = ny/2+1, ny
    ky(j) = (j-1-ny)*(twopi/ly)
 enddo
 ! allocate kx_d and ky_d on the device 
-!allocate(kx_d, source=kx)
-!allocate(ky_d, source=ky)
+allocate(kx_d, source=kx)
+allocate(ky_d, source=ky)
 
 !########################################################################################################################################
 ! 1. INITIALIZATION AND cuDECOMP AUTOTUNING : END
@@ -782,37 +782,37 @@ do t=tstart,tfin
 
    call nvtxStartRange("FFT forward w/ transpositions")
 
-     !$acc host_data use_device(rhsp)
-     status = cufftExecD2Z(planXf, rhsp, psi_d)
-     if (status /= CUFFT_SUCCESS) write(*,*) 'X forward error: ', status
-     !$acc end host_data
-     ! psi(kx,y,z) -> psi(y,z,kx)
-     CHECK_CUDECOMP_EXIT(cudecompTransposeXToY(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX,piX_d2z%halo_extents, [0,0,0]))
-     ! psi(y,z,kx) -> psi(ky,z,kx)
-     status = cufftExecZ2Z(planY, psi_d, psi_d, CUFFT_FORWARD)
-     if (status /= CUFFT_SUCCESS) write(*,*) 'Y forward error: ', status
-     ! psi(ky,z,kx) -> psi(z,kx,ky)
-     CHECK_CUDECOMP_EXIT(cudecompTransposeYToZ(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX)) 
+   !$acc host_data use_device(rhsp)
+   status = cufftExecD2Z(planXf, rhsp, psi_d)
+   if (status /= CUFFT_SUCCESS) write(*,*) 'X forward error: ', status
+   !$acc end host_data
+   ! psi(kx,y,z) -> psi(y,z,kx)
+   CHECK_CUDECOMP_EXIT(cudecompTransposeXToY(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX,piX_d2z%halo_extents, [0,0,0]))
+   ! psi(y,z,kx) -> psi(ky,z,kx)
+   status = cufftExecZ2Z(planY, psi_d, psi_d, CUFFT_FORWARD)
+   if (status /= CUFFT_SUCCESS) write(*,*) 'Y forward error: ', status
+   ! psi(ky,z,kx) -> psi(z,kx,ky)
+   CHECK_CUDECOMP_EXIT(cudecompTransposeYToZ(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX)) 
 
    call nvtxEndRange
 
-   !block
-    np(piZ_d2z%order(1)) = piZ_d2z%shape(1)
-    np(piZ_d2z%order(2)) = piZ_d2z%shape(2)
-    call c_f_pointer(c_devloc(psi_d), phi3d, piZ_d2z%shape)
+   np(piZ_d2z%order(1)) = piZ_d2z%shape(1)
+   np(piZ_d2z%order(2)) = piZ_d2z%shape(2)
+   np(piZ_d2z%order(3)) = piZ_d2z%shape(3)
+   call c_f_pointer(c_devloc(psi_d), psi3d, piZ_d2z%shape)
 
-    offsets(piZ_d2z%order(1)) = piZ_d2z%lo(1) - 1
-    offsets(piZ_d2z%order(2)) = piZ_d2z%lo(2) - 1
+   offsets(piZ_d2z%order(1)) = piZ_d2z%lo(1) - 1
+   offsets(piZ_d2z%order(2)) = piZ_d2z%lo(2) - 1
 
-    xoff = offsets(1)
-    yoff = offsets(2)
-    npx = np(1)
-    npy = np(2)
+   xoff = offsets(1)
+   yoff = offsets(2)
+   npx = np(1)
+   npy = np(2)
 
-    call nvtxStartRange("Solution")
+   call nvtxStartRange("Solution")
 
-   !!!$acc parallel loop gang private(a, b, c, d, sol, factor)
-   !!$acc kernels
+   !!$acc parallel loop gang private(a, b, c, d, sol, factor)   
+   !$acc kernels
    do jl = 1, npy
       jg = yoff + jl
       do il = 1, npx
@@ -824,23 +824,22 @@ do t=tstart,tfin
          ! Fill diagonals and rhs for each k
          do k = 1, nz
             a(k) =  1.0d0*dzi*dzi
-            b(k) = -2.0d0*dzi*dzi - kx(ig)*kx(ig) - ky(jg)*ky(jg)
+            b(k) = -2.0d0*dzi*dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
             c(k) =  1.0d0*dzi*dzi
-            !d(k) =  0.d0!phi3d(k,il,jl)
+            d(k) =  psi3d(k,il,jl)
          enddo
 
          ! Neumann BC at k=1 (bottom)
-         b(1) = -2.0d0*dzi*dzi - kx(ig)*kx(ig) - ky(jg)*ky(jg)
+         b(1) = -2.0d0*dzi*dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
          c(1) =  2.0d0*dzi*dzi
          a(1) =  0.0d0
 
          ! Neumann BC at j=ny (top)
          a(nz) =  2.0d0*dzi*dzi
-         b(nz) = -2.0d0*dzi*dzi - kx(ig)*kx(ig) - ky(jg)*ky(jg)
+         b(nz) = -2.0d0*dzi*dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
          c(nz) =  0.0d0
 
-         ! Special handling for kx=0 and ky=0 (mean mode)
-         ! fix pressure on one point (otherwise is zero mean along x)
+         ! Special handling for kx=0 and ky=0 (mean mode): ix pressure on one point
          if ((ig .eq. 1) .and. (jg .eq. 1)) then
             b(1) = 1.0d0
             c(1) = 0.0d0
@@ -863,32 +862,28 @@ do t=tstart,tfin
 
          ! Store solution in array that do the back FFT
          do k=1,nz
-            phi3d(k,il,jl) = 0.d0!sol(k)
-         enddo
-
+            !sol(k)=cmplx(0.d0,0.d0)
+            psi3d(k,il,jl) = sol(k)
+         enddo      
       enddo
    enddo
-   !!$acc end kernels
+   !$acc end kernels
 
-
-    call nvtxEndRange
-   
-   !end block
 
    call nvtxStartRange("FFT backwards along x and y w/ transpositions")
 
-     ! psi(z,kx,ky) -> psi(ky,z,kx)
-     CHECK_CUDECOMP_EXIT(cudecompTransposeZToY(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX))
-     ! psi(ky,z,kx) -> psi(y,z,kx)
-     status = cufftExecZ2Z(planY, psi_d, psi_d, CUFFT_INVERSE)
-     if (status /= CUFFT_SUCCESS) write(*,*) 'Y inverse error: ', status
-     ! psi(y,z,kx) -> psi(kx,y,z)
-     CHECK_CUDECOMP_EXIT(cudecompTransposeYToX(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX,[0,0,0], piX_d2z%halo_extents))
-     !$acc host_data use_device(p)
-      ! psi(kx,y,z) -> psi(x,y,z)
-      status = cufftExecZ2D(planXb, psi_d, p)
-      if (status /= CUFFT_SUCCESS) write(*,*) 'X inverse error: ', status
-     !$acc end host_data
+   ! psi(z,kx,ky) -> psi(ky,z,kx)
+   CHECK_CUDECOMP_EXIT(cudecompTransposeZToY(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX))
+   ! psi(ky,z,kx) -> psi(y,z,kx)
+   status = cufftExecZ2Z(planY, psi_d, psi_d, CUFFT_INVERSE)
+   if (status /= CUFFT_SUCCESS) write(*,*) 'Y inverse error: ', status
+   ! psi(y,z,kx) -> psi(kx,y,z)
+   CHECK_CUDECOMP_EXIT(cudecompTransposeYToX(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX,[0,0,0], piX_d2z%halo_extents))
+   !$acc host_data use_device(p)
+   ! psi(kx,y,z) -> psi(x,y,z)
+   status = cufftExecZ2D(planXb, psi_d, p)
+   if (status /= CUFFT_SUCCESS) write(*,*) 'X inverse error: ', status
+   !$acc end host_data
 
    ! normalize pressure
    !$acc kernels
