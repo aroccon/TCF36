@@ -183,7 +183,7 @@ CHECK_CUDECOMP_EXIT(cudecompGetTransposeWorkspaceSize(handle, grid_descD2Z, nEle
 CHECK_CUDECOMP_EXIT(cudecompGetHaloWorkspaceSize(handle, grid_descD2Z, 1, halo, nElemWork_halo_d2z))
 
 
-   write(*,*) "piZ_d2z_lo", piZ_d2z%lo
+!write(*,*) "piZ_d2z_lo", piZ_d2z%lo
 
 
 
