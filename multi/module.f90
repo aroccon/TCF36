@@ -12,7 +12,7 @@ module param
     integer :: inflow, inphi
     double precision :: radius, sigma, epsr, eps, pos, val, epsi, enum ! phase-field parameters
     double precision :: times,timef
-    double precision :: gradpx, gradpy
+    double precision :: gradpx, gradpy, noise
 end module param
 
 

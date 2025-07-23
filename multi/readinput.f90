@@ -74,6 +74,8 @@ if (rank .eq. 0) then
     write(*,*) "Eps     ", eps
     write(*,*) "Epsi    ", epsi
     write(*,*) "Lx      ", lx
+    write(*,*) "Ly      ", ly
+    write(*,*) "Lz      ", lz
     write(*,*) "dx", dx
     write(*,*) "dxi", dxi
     write(*,*) "ddxi", ddxi

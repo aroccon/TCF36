@@ -305,9 +305,10 @@ if (rank.eq.0) write(*,*) "Initialize velocity field (fresh start)"
          do j = 1+halo_ext, piX%shape(2)-halo_ext
             jg = piX%lo(2) + j - 1 
             do i = 1, piX%shape(1)
-               u(i,j,k) =  0.d0
-               v(i,j,k) =  0.d0
-               w(i,j,k) =  0.d0
+               call random_number(noise)
+               u(i,j,k) =  10.d0 + 2.d0*sin(twopi/lx*x(i))*cos(twopi/ly*y(jg))*(1-z(kg)*z(kg))
+               v(i,j,k) =  0.d0  - ly/lx*2.d0*cos(twopi/lx*x(i))*sin(twopi/ly*y(jg))*(1-z(kg)*z(kg))
+               w(i,j,k) =  0.d0  
             enddo
          enddo
       enddo
@@ -609,8 +610,8 @@ do t=tstart,tfin
             rhsv(i,j,k)=rhsv(i,j,k)+(h21+h22+h23)*rhoi
             rhsw(i,j,k)=rhsw(i,j,k)+(h31+h32+h33)*rhoi
             ! Pressure driven
-            rhsu(i,j,k)=rhsu(i,j,k) + gradpx
-            rhsv(i,j,k)=rhsv(i,j,k) + gradpy
+            rhsu(i,j,k)=rhsu(i,j,k) - gradpx
+            rhsv(i,j,k)=rhsv(i,j,k) - gradpy
          enddo
       enddo
    enddo
