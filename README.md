@@ -19,7 +19,7 @@ If you use this code, please cite the following work:
 - Laminar solution (no need of TDMA) ✅
 - TDMA ✅
 - TDMA validation ✅ 
-- Turbulent channel flow 🚧
+- Turbulent channel flow 🚧 (looks promising)
 - Stretched grids 🚧
 
 ## Run the code
@@ -30,9 +30,9 @@ If you use this code, please cite the following work:
 - Autotuning of the multi-GPU version: Default pr=0 and pc=0 enables autotuging (when cuDecomp is initialized), cuDecomp will perform an autotuning at the start finding the best decomposition (the only input is the total number of tasks). In this way, everyhting is automatic and the code does not need to be recompiled when changing the number of MPI processes.
 - A conditional compilation flag is used to enable or not the phase-field module. By default is single-phase only.
 
-## Validation 
+## Turbulent channel flow 
 
-![Test](val/val.png)
+![Test](val/tcf.png)
 
 
 ## Contributing

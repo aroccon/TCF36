@@ -69,8 +69,8 @@ ierr = cudaSetDevice(localRank) !assign GPU to MPI rank
 call readinput
 
 ! hard coded
-pr = 1
-pc = 2
+pr = 0
+pc = 0
 halo_ext=1
 ! comm_backend = CUDECOMP_TRANSPOSE_COMM_MPI_P2P
 comm_backend = 0 ! Enable full autotuning
