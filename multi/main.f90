@@ -50,7 +50,7 @@ integer :: offsets(3), xoff, yoff
 integer :: np(3)
 
 ! Enable or disable phase field (acceleration eneabled by default)
-#define phiflag 1
+#define phiflag 0
 
 !########################################################################################################################################
 ! 1. INITIALIZATION OF MPI AND cuDECOMP AUTOTUNING : START
@@ -306,8 +306,11 @@ if (rank.eq.0) write(*,*) "Initialize velocity field (fresh start)"
             jg = piX%lo(2) + j - 1 
             do i = 1, piX%shape(1)
                call random_number(noise)
-               u(i,j,k) =  10.d0 + 2.d0*sin(twopi/lx*x(i))*cos(twopi/ly*y(jg))*(1-z(kg)*z(kg))
-               v(i,j,k) =  0.d0  - ly/lx*2.d0*cos(twopi/lx*x(i))*sin(twopi/ly*y(jg))*(1-z(kg)*z(kg))
+               ! u(i,j,k) =  10.d0 + 2.d0*sin(twopi/lx*x(i))*cos(twopi/ly*y(jg))*(1-z(kg)*z(kg))
+               ! v(i,j,k) =  0.d0  - ly/lx*2.d0*cos(twopi/lx*x(i))*sin(twopi/ly*y(jg))*(1-z(kg)*z(kg))
+               ! w(i,j,k) =  0.d0  
+               u(i,j,k) =  0.d0 
+               v(i,j,k) =  0.d0 
                w(i,j,k) =  0.d0  
             enddo
          enddo
@@ -818,17 +821,86 @@ do t=tstart,tfin
 
    call nvtxStartRange("Solution")
 
-   !$acc parallel loop gang private(a, b, c, d, sol, factor)   
-   !!$acc kernels ! kernels is safer but serialized the TDMA, rememeber a-d private if using parallel loop
+   ! !$acc parallel loop gang private(a, b, c, d, sol, factor)   
+   ! !!$acc kernels ! kernels is safer but serialized the TDMA, rememeber a-d private if using parallel loop
+   ! do jl = 1, npy
+   !    jg = yoff + jl
+   !    do il = 1, npx
+   !       ig = xoff + il
+   !       ! Set up tridiagonal system for each kx
+   !       ! The system is: (A_j) * pc(kx,j-1) + (B_j) * pc(kx,j) + (C_j) * pc(kx,j+1) = rhs(kx,j)
+   !       ! FD2 in z: -pc(k-1) + 2*pc(k) - pc(k+1)  --> Laplacian in z
+   !       ! Neumann BC: d/dz pc = 0 at k=1 and k=nz
+   !       ! Fill diagonals and rhs for each k
+   !       do k = 1, nz
+   !          a(k) =  1.0d0*dzi*dzi
+   !          b(k) = -2.0d0*dzi*dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
+   !          c(k) =  1.0d0*dzi*dzi
+   !          d(k) =  psi3d(k,il,jl)
+   !       enddo
+
+   !       ! Neumann BC at k=1 (bottom)
+   !       b(1) = -2.0d0*dzi*dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
+   !       c(1) =  2.0d0*dzi*dzi
+   !       a(1) =  0.0d0
+
+   !       ! Neumann BC at j=ny (top)
+   !       a(nz) =  2.0d0*dzi*dzi
+   !       b(nz) = -2.0d0*dzi*dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
+   !       c(nz) =  0.0d0
+
+   !       ! Special handling for kx=0 and ky=0 (mean mode): ix pressure on one point
+   !       if ((ig .eq. 1) .and. (jg .eq. 1)) then
+   !          b(1) = 1.0d0
+   !          c(1) = 0.0d0
+   !          d(1) = 0.0d0
+   !       endif
+
+   !       ! Thomas algorithm (TDMA) for tridiagonal system 
+   !       ! Forward sweep
+   !       do k=2,nz
+   !          factor = a(k)/b(k-1)
+   !          b(k) = b(k) - factor * c(k-1)
+   !          d(k) = d(k) - factor * d(k-1)
+   !       enddo
+
+   !       ! ! Back substitution
+   !       ! sol(nz) = d(nz)/b(nz)
+   !       ! do k = nz-1, 1, -1
+   !       !    sol(k) = (d(k) - c(k)*sol(k+1))/b(k)
+   !       ! end do
+
+   !       ! ! Store solution in array that do the back FFT
+   !       ! do k=1,nz
+   !       !    !sol(k)=cmplx(0.d0,0.d0)
+   !       !    psi3d(k,il,jl) = sol(k)
+   !       ! enddo  
+
+
+   !       ! Back substitution
+   !       sol(nz) = d(nz)/b(nz)
+   !       do k = nz-1, 1, -1
+   !          sol(k) = (d(k) - c(k)*sol(k+1))/b(k)
+   !       end do
+
+   !       ! Store solution in array that do the back FFT
+   !       do k=1,nz
+   !          !sol(k)=cmplx(0.d0,0.d0)
+   !          psi3d(k,il,jl) = sol(k)
+   !       enddo      
+   !    enddo
+   ! enddo
+   !!$acc end kernels
+
+   !$acc parallel loop collapse(2) gang private(a, b, c, d, sol, factor) 
    do jl = 1, npy
-      jg = yoff + jl
       do il = 1, npx
+
+         jg = yoff + jl
          ig = xoff + il
-         ! Set up tridiagonal system for each kx
-         ! The system is: (A_j) * pc(kx,j-1) + (B_j) * pc(kx,j) + (C_j) * pc(kx,j+1) = rhs(kx,j)
-         ! FD2 in z: -pc(k-1) + 2*pc(k) - pc(k+1)  --> Laplacian in z
-         ! Neumann BC: d/dz pc = 0 at k=1 and k=nz
-         ! Fill diagonals and rhs for each k
+
+         ! Fill diagonals and RHS
+         !$acc loop seq
          do k = 1, nz
             a(k) =  1.0d0*dzi*dzi
             b(k) = -2.0d0*dzi*dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
@@ -836,45 +908,46 @@ do t=tstart,tfin
             d(k) =  psi3d(k,il,jl)
          enddo
 
-         ! Neumann BC at k=1 (bottom)
-         b(1) = -2.0d0*dzi*dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
-         c(1) =  2.0d0*dzi*dzi
+         ! Neumann BC at bottom
+         b(1) = -2.0d0 * dzi * dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
+         c(1) =  2.0d0 * dzi * dzi
          a(1) =  0.0d0
 
-         ! Neumann BC at j=ny (top)
-         a(nz) =  2.0d0*dzi*dzi
-         b(nz) = -2.0d0*dzi*dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
-         c(nz) =  0.0d0
+         ! Neumann BC at top
+         a(nz) = 2.0d0 * dzi * dzi
+         b(nz) = -2.0d0 * dzi * dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
+         c(nz) = 0.0d0
 
-         ! Special handling for kx=0 and ky=0 (mean mode): ix pressure on one point
-         if ((ig .eq. 1) .and. (jg .eq. 1)) then
+         ! Enforce zero-mean pressure at one point
+         if (ig == 1 .and. jg == 1) then
             b(1) = 1.0d0
             c(1) = 0.0d0
             d(1) = 0.0d0
-         endif
+         end if
 
-         ! Thomas algorithm (TDMA) for tridiagonal system 
-         ! Forward sweep
-         do k=2,nz
-            factor = a(k)/b(k-1)
+         ! Forward elimination (Thomas)
+         !$acc loop seq
+         do k = 2, nz
+            factor = a(k) / b(k-1)
             b(k) = b(k) - factor * c(k-1)
             d(k) = d(k) - factor * d(k-1)
-         enddo
-
-         ! Back substitution
-         sol(nz) = d(nz)/b(nz)
-         do k = nz-1, 1, -1
-            sol(k) = (d(k) - c(k)*sol(k+1))/b(k)
          end do
 
-         ! Store solution in array that do the back FFT
-         do k=1,nz
-            !sol(k)=cmplx(0.d0,0.d0)
+         ! Backward substitution
+         sol(nz) = d(nz) / b(nz)
+         !$acc loop seq
+         do k = nz-1, 1, -1
+            sol(k) = (d(k) - c(k)*sol(k+1)) / b(k)
+         end do
+
+         ! Copy solution back
+         !$acc loop seq
+         do k = 1, nz
             psi3d(k,il,jl) = sol(k)
-         enddo      
-      enddo
-   enddo
-   !!$acc end kernels
+         end do
+      end do
+   end do
+
 
 
    call nvtxStartRange("FFT backwards along x and y w/ transpositions")
