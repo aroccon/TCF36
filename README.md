@@ -1,6 +1,6 @@
 # TCF36
 
-Extended version of MHIT36 for channel flow.
+Extended version of MHIT36 for turbulent channel flow.
 
 If you use this code, please cite the following work: 
 ```bibtex
