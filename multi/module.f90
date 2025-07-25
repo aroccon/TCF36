@@ -1,6 +1,6 @@
 module param
-    integer, parameter :: nx=512
-    integer, parameter :: ny=256
+    integer, parameter :: nx=256
+    integer, parameter :: ny=128
     integer, parameter :: nz=64
     double precision :: pi, rhoi, twopi
     double precision :: lx, dx, dxi, ddxi 
@@ -51,7 +51,7 @@ module velocity
    double precision, allocatable :: rhsp(:,:,:), p(:,:,:)
    double precision, allocatable :: rhspp(:,:,:), pp(:,:,:)
    double precision, allocatable :: div(:,:,:)
-   double precision :: uc, vc, wc, umax, gumax=1.0d0, cou, alpha, beta
+   double precision :: uc, vc, wc, umax, gumax=1.0d0, cou
    double precision :: h11, h12, h13, h21, h22, h23, h31, h32, h33
    double precision :: umean, vmean, wmean, gumean, gvmean, gwmean
    double precision, allocatable :: mysin(:), mycos(:)
