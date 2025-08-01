@@ -42,7 +42,7 @@ complex(8), pointer, device, contiguous :: work_d(:), work_halo_d(:), work_d_d2z
 character(len=40) :: namefile
 character(len=4) :: itcount
 ! Code variables
-real(8)::err,maxErr
+real(8)::err,maxErr,zwall
 complex(8), device, pointer :: psi3d(:,:,:)
 real(8) :: k2
 !integer :: il, jl, ig, jg
@@ -307,10 +307,12 @@ if (rank.eq.0) write(*,*) "Initialize velocity field (fresh start)"
          do j = 1+halo_ext, piX%shape(2)-halo_ext
             jg = piX%lo(2) + j - 1 
             do i = 1, piX%shape(1)
-               call random_number(noise)
-                u(i,j,k) =  10.d0 + 2.d0*sin(twopi/lx*x(i))*cos(twopi/ly*y(jg))*(1-z(kg)*z(kg))
-                v(i,j,k) =  0.d0  - ly/lx*2.d0*cos(twopi/lx*x(i))*sin(twopi/ly*y(jg))*(1-z(kg)*z(kg))
-                w(i,j,k) =  0.d0  
+               zwall=min(2-z(kg),z(kg))*1.d0/mu
+               if (zwall .le. 5d0) u(i,j,k) =  zwall
+               if (zwall .gt. 5d0) u(i,j,k) =  1.d0/0.41d0*log(zwall) + 5.0
+               u(i,j,k) =  u(i,j,k) + 0.5d0*sin(twopi/lx*x(i))*cos(twopi/ly*y(jg))*zwall*mu
+               v(i,j,k) =             0.0d0
+               w(i,j,k) =           - 0.5d0*sin(twopi/lx*x(i))*cos(twopi/ly*y(jg))*zwall*mu
                !u(i,j,k) =  0.d0 
                !v(i,j,k) =  0.d0 
                !w(i,j,k) =  0.d0  
