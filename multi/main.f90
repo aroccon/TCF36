@@ -29,7 +29,7 @@ integer :: status
 real(8), allocatable :: x(:), y(:), z(:), kx(:), ky(:)
 integer :: i,j,k,il,jl,kl,ig,jg,kg,t,stage
 integer :: im,ip,jm,jp,km,kp,last,idx
-double complex :: a(nz), b(nz), c(nz), d(nz), sol(nz)
+double complex :: a(0:nz+1), b(0:nz+1), c(0:nz+1), d(0:nz+1), sol(0:nz+1)
 real(8), device, allocatable :: kx_d(:), ky_d(:)
 ! working arrays
 complex(8), allocatable :: psi(:)
@@ -42,7 +42,7 @@ complex(8), pointer, device, contiguous :: work_d(:), work_halo_d(:), work_d_d2z
 character(len=40) :: namefile
 character(len=4) :: itcount
 ! Code variables
-real(8)::err,maxErr,zwall
+real(8)::err,maxErr,zwall,meanp,gmeanp
 complex(8), device, pointer :: psi3d(:,:,:)
 real(8) :: k2
 !integer :: il, jl, ig, jg
@@ -219,7 +219,7 @@ y(1)=dy/2
 do i = 2, ny
    y(i) = y(i-1) + dy
 enddo
-z(1)=dz/2
+z(1)=dz/2 
 do i = 2, nz
    z(i) = z(i-1) + dz
 enddo
@@ -307,15 +307,9 @@ if (rank.eq.0) write(*,*) "Initialize velocity field (fresh start)"
          do j = 1+halo_ext, piX%shape(2)-halo_ext
             jg = piX%lo(2) + j - 1 
             do i = 1, piX%shape(1)
-               zwall=min(2-z(kg),z(kg))*1.d0/mu
-               if (zwall .le. 5d0) u(i,j,k) =  zwall
-               if (zwall .gt. 5d0) u(i,j,k) =  1.d0/0.41d0*log(zwall) + 5.0
-               u(i,j,k) =  u(i,j,k) + 0.5d0*sin(twopi/lx*x(i))*cos(twopi/ly*y(jg))*zwall*mu
-               v(i,j,k) =             0.0d0
-               w(i,j,k) =           - 0.5d0*sin(twopi/lx*x(i))*cos(twopi/ly*y(jg))*zwall*mu
-               !u(i,j,k) =  0.d0 
-               !v(i,j,k) =  0.d0 
-               !w(i,j,k) =  0.d0  
+                u(i,j,k) =  10.d0 + 2.d0*sin(twopi/lx*x(i))*cos(twopi/ly*y(jg))*(1-z(kg)*z(kg))
+                v(i,j,k) =  0.d0  - ly/lx*2.d0*cos(twopi/lx*x(i))*sin(twopi/ly*y(jg))*(1-z(kg)*z(kg))
+                w(i,j,k) =  0.d0  
             enddo
          enddo
       enddo
@@ -713,7 +707,7 @@ do t=tstart,tfin
       !$acc end host_data 
 
       ! impose BC on u,v and w at k=1 and kg=nz (for u and v) and kg=nz+1
-      ! can be improved as the bottom one
+      ! It can be improved, marginal gain, easier to understand this format
       !$acc kernels
       do k=1, piX%shape(3)
          do j=1, piX%shape(2)
@@ -725,6 +719,7 @@ do t=tstart,tfin
                v(i,j,k)=0.d0
                w(i,j,k)=0.d0
                endif
+               ! top wall
                if (kg .eq. nz) then
                u(i,j,k)=0.d0
                v(i,j,k)=0.d0
@@ -814,7 +809,7 @@ do t=tstart,tfin
 
    call nvtxStartRange("Solution")
 
-   !$acc parallel loop collapse(2) gang private(a, b, c, d, factor) 
+   !$acc parallel loop collapse(2) gang private(a, b, c, d, factor, sol) 
    do jl = 1, npy
       do il = 1, npx
 
@@ -824,7 +819,7 @@ do t=tstart,tfin
          ! Set up tridiagonal system for each kx
          ! The system is: (A_j) * pc(kx,j-1) + (B_j) * pc(kx,j) + (C_j) * pc(kx,j+1) = rhs(kx,j)
          ! FD2 in z: -pc(k-1) + 2*pc(k) - pc(k+1)  --> Laplacian in z
-         ! Neumann BC: d/dz pc = 0 at k=1 and k=nz
+         ! Neumann BC: d/dz pc = 0 at w collocation point
          ! Fill diagonals and rhs for each  
          !$acc loop seq
          do k = 1, nz
@@ -836,17 +831,18 @@ do t=tstart,tfin
 
          ! ghost node elimintaion trick
          ! Neumann BC at bottom
-         b(1) = -2.0d0 * dzi * dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
-         c(1) =  2.0d0 * dzi * dzi
-         a(1) =  0.0d0
+         b(0) = -1.0d0 * dzi * dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
+         c(0) =  1.0d0 * dzi * dzi
+         a(0) =  0.0d0
 
          ! ghost node elimintaion trick
          ! Neumann BC at top
-         a(nz) = 2.0d0 * dzi * dzi
-         b(nz) = -2.0d0 * dzi * dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
-         c(nz) = 0.0d0
+         a(nz+1) =  1.0d0 * dzi * dzi
+         b(nz+1) = -1.0d0 * dzi * dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
+         c(nz+1) =  0.0d0
 
-         ! Enforce zero-mean pressure at one point
+         ! Enforce pressure at one point? one interior point, avodig messing up with BC
+         ! need brackets?
          if (ig == 1 .and. jg == 1) then
             b(1) = 1.0d0
             c(1) = 0.0d0
@@ -855,24 +851,25 @@ do t=tstart,tfin
 
          ! Forward elimination (Thomas)
          !$acc loop seq
-         do k = 2, nz
+         do k = 1, nz+1
             factor = a(k) / b(k-1)
             b(k) = b(k) - factor * c(k-1)
             d(k) = d(k) - factor * d(k-1)
          end do
 
-         ! Backward substitution
-         psi3d(nz,il,jl) = d(nz) / b(nz)
+         ! Back substitution
+         sol(nz+1,il,jl) = d(nz+1) / b(nz+1)
+         ! check on pivot like flutas?
          !$acc loop seq
-         do k = nz-1, 1, -1
-            psi3d(k,il,jl) = (d(k) - c(k)*psi3d(k+1,il,jl)) / b(k)
+         do k = nz, 0, -1
+            sol(k) = (d(k) - c(k)*sol(k+1)) / b(k)
          end do
 
-         ! Copy solution back
-         !!$acc loop seq
-         !do k = 1, nz
-         !   psi3d(k,il,jl) = sol(k)
-         !end do
+         ! Store solution in array that do the back FFT
+         do k=1,nz
+            psi3d(k,il,jl) = sol(k)
+         enddo 
+
       end do
    end do
 
@@ -893,20 +890,30 @@ do t=tstart,tfin
    if (status /= CUFFT_SUCCESS) write(*,*) 'X inverse error: ', status
    !$acc end host_data
 
-   ! normalize pressure
-   !$acc kernels
+   ! normalize pressure and remove mean
+   meanp = 0.0d0
+   !$acc parallel loop reduction(+:meanp)
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
-            p(i,j,k) = p(i,j,k)/nx/ny
-         enddo
-      enddo
-   enddo
-   !$acc end kernels
+            meanp = meanp + p(i,j,k)
+         end do
+      end do
+   end do
+   meanp=meanp/nx/(piX%shape(2)-2*halo_ext)/(piX%shape(3)-2*halo_ext)
+   call MPI_Allreduce(meanp,gmeanp,1,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD, ierr)
+   gmeanp=gmeanp/ranks
+   ! remove mean and normalize
+   !$acc parallel loop
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
+         do i=1,nx
+            p(i,j,k) = ( p(i,j,k)/(nx*ny) - gmeanp)/(nx*ny)
+         end do
+      end do
+   end do
       
    call nvtxEndRange
-
-
 
    ! update halo nodes with pressure 
    ! Update X-pencil halos 
@@ -914,9 +921,6 @@ do t=tstart,tfin
     CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, p, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
     CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, p, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
     !$acc end host_data 
-
-   
-
 
    !########################################################################################################################################
    ! END STEP 7: POISSON SOLVER FOR PRESSURE
