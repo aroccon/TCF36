@@ -821,7 +821,6 @@ do t=tstart,tfin
          ! FD2 in z: -pc(k-1) + 2*pc(k) - pc(k+1)  --> Laplacian in z
          ! Neumann BC: d/dz pc = 0 at w collocation point
          ! Fill diagonals and rhs for each  
-         !$acc loop seq
          do k = 1, nz
             a(k) =  1.0d0*dzi*dzi
             b(k) = -2.0d0*dzi*dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
@@ -858,7 +857,7 @@ do t=tstart,tfin
          end do
 
          ! Back substitution
-         sol(nz+1,il,jl) = d(nz+1) / b(nz+1)
+         sol(nz+1) = d(nz+1) / b(nz+1)
          ! check on pivot like flutas?
          !$acc loop seq
          do k = nz, 0, -1
