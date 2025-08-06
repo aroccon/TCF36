@@ -303,12 +303,12 @@ if (rank.eq.0) write(*,*) "Initialize velocity field (fresh start)"
    if (inflow .eq. 0) then
       if (rank.eq.0) write(*,*) "Initialize Taylor-green"
       do k = 1+halo_ext, piX%shape(3)-halo_ext
-         kg = piX%lo(3) + k - 1 
+         kg = piX%lo(3) + k - 2
          do j = 1+halo_ext, piX%shape(2)-halo_ext
-            jg = piX%lo(2) + j - 1 
+            jg = piX%lo(2) + j - 2
             do i = 1, piX%shape(1)
-                u(i,j,k) =  10.d0 + 2.d0*sin(twopi/lx*x(i))*cos(twopi/ly*y(jg))*(1-z(kg)*z(kg))
-                v(i,j,k) =  0.d0  - ly/lx*2.d0*cos(twopi/lx*x(i))*sin(twopi/ly*y(jg))*(1-z(kg)*z(kg))
+                u(i,j,k) =  0.d0 -  0.d0*cos(twopi/ly*y(jg))*sin(twopi/2/lz*z(kg))
+                v(i,j,k) =  0.d0 -  0.d0*cos(twopi/lx*x(i)) *sin(twopi/2/lz*z(kg))
                 w(i,j,k) =  0.d0  
             enddo
          enddo
@@ -669,6 +669,10 @@ do t=tstart,tfin
                u(i,j,k) = u(i,j,k) + dt*alpha(stage)*rhsu(i,j,k) + dt*beta(stage)*rhsu_o(i,j,k)
                v(i,j,k) = v(i,j,k) + dt*alpha(stage)*rhsv(i,j,k) + dt*beta(stage)*rhsv_o(i,j,k)
                w(i,j,k) = w(i,j,k) + dt*alpha(stage)*rhsw(i,j,k) + dt*beta(stage)*rhsw_o(i,j,k)
+               rhsu_o(i,j,k)=rhsu(i,j,k)
+               rhsv_o(i,j,k)=rhsv(i,j,k)
+               rhsw_o(i,j,k)=rhsw(i,j,k)
+
             enddo
          enddo
       enddo
@@ -812,15 +816,14 @@ do t=tstart,tfin
    !$acc parallel loop collapse(2) gang private(a, b, c, d, factor, sol) 
    do jl = 1, npy
       do il = 1, npx
-
+         ! compute index global wavenumber ig and jg
          jg = yoff + jl
          ig = xoff + il
-
-         ! Set up tridiagonal system for each kx
-         ! The system is: (A_j) * pc(kx,j-1) + (B_j) * pc(kx,j) + (C_j) * pc(kx,j+1) = rhs(kx,j)
-         ! FD2 in z: -pc(k-1) + 2*pc(k) - pc(k+1)  --> Laplacian in z
-         ! Neumann BC: d/dz pc = 0 at w collocation point
-         ! Fill diagonals and rhs for each  
+         ! Set up tridiagonal system for each i and j
+         ! The system is: (A_z) * pc(k-1,ky,kx) + (B_k) * pc(k,ky,kx) + (C_k) * pc(k,ky,kx) = rhs(k,ky,kx)
+         ! Neumann BC: d/dz pc = 0 at w collocation points
+         ! Fill diagonals and rhs for each
+         ! 0 and ny+1 are the ghost nodes
          do k = 1, nz
             a(k) =  1.0d0*dzi*dzi
             b(k) = -2.0d0*dzi*dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
@@ -828,47 +831,48 @@ do t=tstart,tfin
             d(k) =  psi3d(k,il,jl)
          enddo
 
-         ! ghost node elimintaion trick
          ! Neumann BC at bottom
-         b(0) = -1.0d0 * dzi * dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
-         c(0) =  1.0d0 * dzi * dzi
          a(0) =  0.0d0
+         b(0) = -1.0d0*dzi*dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
+         c(0) =  1.0d0*dzi*dzi
+         d(0) =  0.0d0
 
          ! ghost node elimintaion trick
          ! Neumann BC at top
-         a(nz+1) =  1.0d0 * dzi * dzi
-         b(nz+1) = -1.0d0 * dzi * dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
+         a(nz+1) =  1.0d0*dzi*dzi
+         b(nz+1) = -1.0d0*dzi*dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
          c(nz+1) =  0.0d0
+         d(nz+1) =  0.0d0
 
          ! Enforce pressure at one point? one interior point, avodig messing up with BC
          ! need brackets?
          if (ig == 1 .and. jg == 1) then
-            b(1) = 1.0d0
-            c(1) = 0.0d0
-            d(1) = 0.0d0
+            a(1) = 0.d0
+            b(1) = 1.d0
+            c(1) = 0.d0
+            d(1) = 0.d0
          end if
 
          ! Forward elimination (Thomas)
          !$acc loop seq
          do k = 1, nz+1
-            factor = a(k) / b(k-1)
-            b(k) = b(k) - factor * c(k-1)
-            d(k) = d(k) - factor * d(k-1)
+            factor = a(k)/b(k-1)
+            b(k) = b(k) - factor*c(k-1)
+            d(k) = d(k) - factor*d(k-1)
          end do
 
          ! Back substitution
-         sol(nz+1) = d(nz+1) / b(nz+1)
+         sol(nz+1) = d(nz+1)/b(nz+1)
          ! check on pivot like flutas?
          !$acc loop seq
          do k = nz, 0, -1
-            sol(k) = (d(k) - c(k)*sol(k+1)) / b(k)
+            sol(k) = (d(k) - c(k)*sol(k+1))/b(k)
          end do
 
          ! Store solution in array that do the back FFT
          do k=1,nz
             psi3d(k,il,jl) = sol(k)
          enddo 
-
       end do
    end do
 
@@ -890,27 +894,27 @@ do t=tstart,tfin
    !$acc end host_data
 
    ! normalize pressure and remove mean
-   meanp = 0.0d0
-   !$acc parallel loop reduction(+:meanp)
-   do k=1+halo_ext, piX%shape(3)-halo_ext
-      do j=1+halo_ext, piX%shape(2)-halo_ext
-         do i=1,nx
-            meanp = meanp + p(i,j,k)
-         end do
-      end do
-   end do
-   meanp=meanp/nx/(piX%shape(2)-2*halo_ext)/(piX%shape(3)-2*halo_ext)
-   call MPI_Allreduce(meanp,gmeanp,1,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD, ierr)
-   gmeanp=gmeanp/ranks
-   ! remove mean and normalize
+   !meanp = 0.0d0
    !$acc parallel loop
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
-            p(i,j,k) = ( p(i,j,k)/(nx*ny) - gmeanp)/(nx*ny)
+            p(i,j,k) = p(i,j,k)/nx/ny
          end do
       end do
    end do
+   !meanp=meanp/nx/(piX%shape(2)-2*halo_ext)/(piX%shape(3)-2*halo_ext)
+   !call MPI_Allreduce(meanp,gmeanp,1,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD, ierr)
+   !gmeanp=gmeanp/ranks
+   ! remove mean and normalize
+   !!$acc parallel loop
+   !do k=1+halo_ext, piX%shape(3)-halo_ext
+   !   do j=1+halo_ext, piX%shape(2)-halo_ext
+   !      do i=1,nx
+   !         p(i,j,k) = ( p(i,j,k)/(nx*ny) - gmeanp)/(nx*ny)
+   !      end do
+   !   end do
+   !end do
       
    call nvtxEndRange
 
