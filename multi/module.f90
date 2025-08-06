@@ -13,6 +13,7 @@ module param
     double precision :: radius, sigma, epsr, eps, pos, val, epsi, enum ! phase-field parameters
     double precision :: times,timef
     double precision :: gradpx, gradpy, noise
+    double precision :: amp, mx, my, mz ! for perturbed flow
 end module param
 
 

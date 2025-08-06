@@ -31,12 +31,13 @@ read(55,*) epsr
 
 ! compute pre-defined constant 
 twopi=8.0_8*atan(1.0_8)
+pi=twopi/2.d0
 lx=8.d0!*twopi
 ly=4.d0!twopi
 lz=2.d0
 dx = lx/nx
 dy = ly/ny
-dz = lz/nz
+dz = lz/(nz-1) ! fix to match laminar solution
 dxi = 1.d0/dx
 dyi = 1.d0/dy
 dzi = 1.d0/dz
@@ -47,6 +48,7 @@ rhoi=1.d0/rho
 eps=epsr*dx
 epsi=1.d0/eps
 enum=1.e-16
+!write(*,*) "Check on stability", dt*mu*dzi*dzi
 
 if (rank .eq. 0) then
     !enable/disable for debug check parameters

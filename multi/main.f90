@@ -307,9 +307,15 @@ if (rank.eq.0) write(*,*) "Initialize velocity field (fresh start)"
          do j = 1+halo_ext, piX%shape(2)-halo_ext
             jg = piX%lo(2) + j - 2
             do i = 1, piX%shape(1)
-                u(i,j,k) =  0.d0 -  0.d0*cos(twopi/ly*y(jg))*sin(twopi/2/lz*z(kg))
-                v(i,j,k) =  0.d0 -  0.d0*cos(twopi/lx*x(i)) *sin(twopi/2/lz*z(kg))
-                w(i,j,k) =  0.d0  
+               amp=5.0
+               mx=2.1
+               my=2
+               mz=4
+                u(i,j,k) =  20.d0*(1.d0 - ((2*z(kg) - lz)/lz)**2) !
+                u(i,j,k) =  u(i,j,k) - amp*cos(twopi*mx*x(i)/lx)*sin(twopi*my*y(jg)/ly)*2.d0*twopi/lz*sin(twopi*z(kg)/lz)*cos(twopi*z(kg)/lz)
+                u(i,j,k) =  u(i,j,k) + amp*sin(twopi*mx*x(i)/lx)*(-twopi*my/ly)*sin(2.d0*twopi*my*y(jg)/ly)*sin(twopi*z(kg)/lz)*sin(twopi*z(kg)/lz)
+                v(i,j,k) = -amp*cos(twopi*my*y(jg)/ly)*(twopi*mx/lx)*cos(twopi*mx*x(i)/lx)*sin(twopi*z(kg)/lz)*sin(twopi*z(kg)/lz)
+                w(i,j,k) =  amp*cos(twopi*mx*x(i)/lx)*(twopi*mx/lx)*sin(twopi*my*y(jg)/ly)*sin(twopi*z(kg)/lz)*sin(twopi*z(kg)/lz)
             enddo
          enddo
       enddo
@@ -893,7 +899,7 @@ do t=tstart,tfin
    if (status /= CUFFT_SUCCESS) write(*,*) 'X inverse error: ', status
    !$acc end host_data
 
-   ! normalize pressure and remove mean
+   ! normalize pressure 
    !meanp = 0.0d0
    !$acc parallel loop
    do k=1+halo_ext, piX%shape(3)-halo_ext
@@ -929,9 +935,6 @@ do t=tstart,tfin
    ! END STEP 7: POISSON SOLVER FOR PRESSURE
    !########################################################################################################################################
    call nvtxEndRange
-
-
-
 
 
 
