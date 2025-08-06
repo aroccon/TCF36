@@ -1,7 +1,7 @@
 module param
     integer, parameter :: nx=256
     integer, parameter :: ny=128
-    integer, parameter :: nz=64
+    integer, parameter :: nz=96
     double precision :: pi, rhoi, twopi
     double precision :: lx, dx, dxi, ddxi 
     double precision :: ly, dy, dyi, ddyi
@@ -12,7 +12,7 @@ module param
     integer :: inflow, inphi
     double precision :: radius, sigma, epsr, eps, pos, val, epsi, enum ! phase-field parameters
     double precision :: times,timef
-    double precision :: gradpx, gradpy, noise
+    double precision :: gradpx, gradpy, noise, lflow, gflow, ubulk, cflx, cfly, cflz
     double precision :: amp, mx, my, mz ! for perturbed flow
 end module param
 
@@ -52,9 +52,8 @@ module velocity
    double precision, allocatable :: rhsp(:,:,:), p(:,:,:)
    double precision, allocatable :: rhspp(:,:,:), pp(:,:,:)
    double precision, allocatable :: div(:,:,:)
-   double precision :: uc, vc, wc, umax, gumax=1.0d0, cou
+   double precision :: uc, vc, wc, umax, vmax, wmax, gumax, gvmax, gwmax, cou
    double precision :: h11, h12, h13, h21, h22, h23, h31, h32, h33
-   double precision :: umean, vmean, wmean, gumean, gvmean, gwmean
    double precision, allocatable :: mysin(:), mycos(:)
 end module velocity
 

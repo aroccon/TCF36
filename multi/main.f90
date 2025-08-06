@@ -311,11 +311,11 @@ if (rank.eq.0) write(*,*) "Initialize velocity field (fresh start)"
          do j = 1+halo_ext, piX%shape(2)-halo_ext
             jg = piX%lo(2) + j - 2
             do i = 1, piX%shape(1)
-               amp=5.0
-               mx=2.1
+               amp=0.2
+               mx=2
                my=2
                mz=4
-                u(i,j,k) =  20.d0*(1.d0 - ((2*z(kg) - lz)/lz)**2) !
+                u(i,j,k) =  3.d0*(1.d0 - ((2*z(kg) - lz)/lz)**2) !
                 u(i,j,k) =  u(i,j,k) - amp*cos(twopi*mx*x(i)/lx)*sin(twopi*my*y(jg)/ly)*2.d0*twopi/lz*sin(twopi*z(kg)/lz)*cos(twopi*z(kg)/lz)
                 u(i,j,k) =  u(i,j,k) + amp*sin(twopi*mx*x(i)/lx)*(-twopi*my/ly)*sin(2.d0*twopi*my*y(jg)/ly)*sin(twopi*z(kg)/lz)*sin(twopi*z(kg)/lz)
                 v(i,j,k) = -amp*cos(twopi*my*y(jg)/ly)*(twopi*mx/lx)*cos(twopi*mx*x(i)/lx)*sin(twopi*z(kg)/lz)*sin(twopi*z(kg)/lz)
@@ -676,9 +676,9 @@ do t=tstart,tfin
                rhsu(i,j,k)=rhsu(i,j,k) + 0.5d0*(fxst(im,j,k)+fxst(i,j,k))*rhoi
                rhsv(i,j,k)=rhsv(i,j,k) + 0.5d0*(fyst(i,jm,k)+fyst(i,j,k))*rhoi
                rhsw(i,j,k)=rhsw(i,j,k) + 0.5d0*(fzst(i,j,km)+fzst(i,j,k))*rhoi
-               u(i,j,k) = u(i,j,k) + dt*alpha(stage)*rhsu(i,j,k) + dt*beta(stage)*rhsu_o(i,j,k)
-               v(i,j,k) = v(i,j,k) + dt*alpha(stage)*rhsv(i,j,k) + dt*beta(stage)*rhsv_o(i,j,k)
-               w(i,j,k) = w(i,j,k) + dt*alpha(stage)*rhsw(i,j,k) + dt*beta(stage)*rhsw_o(i,j,k)
+               u(i,j,k) = u(i,j,k) + dt*alpha(stage)*rhsu(i,j,k) + dt*beta(stage)*rhsu_o(i,j,k)! -dt*(alpha(stage)+beta(stage))*rho*(p(i,j,k)-p(im,j,k))*dxi
+               v(i,j,k) = v(i,j,k) + dt*alpha(stage)*rhsv(i,j,k) + dt*beta(stage)*rhsv_o(i,j,k)! -dt*(alpha(stage)+beta(stage))*rho*(p(i,j,k)-p(i,jm,k))*dyi
+               w(i,j,k) = w(i,j,k) + dt*alpha(stage)*rhsw(i,j,k) + dt*beta(stage)*rhsw_o(i,j,k)! -dt*(alpha(stage)+beta(stage))*rho*(p(i,j,k)-p(i,j,km))*dzi
                rhsu_o(i,j,k)=rhsu(i,j,k)
                rhsv_o(i,j,k)=rhsv(i,j,k)
                rhsw_o(i,j,k)=rhsw(i,j,k)
@@ -913,18 +913,7 @@ do t=tstart,tfin
          end do
       end do
    end do
-   !meanp=meanp/nx/(piX%shape(2)-2*halo_ext)/(piX%shape(3)-2*halo_ext)
-   !call MPI_Allreduce(meanp,gmeanp,1,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD, ierr)
-   !gmeanp=gmeanp/ranks
-   ! remove mean and normalize
-   !!$acc parallel loop
-   !do k=1+halo_ext, piX%shape(3)-halo_ext
-   !   do j=1+halo_ext, piX%shape(2)-halo_ext
-   !      do i=1,nx
-   !         p(i,j,k) = ( p(i,j,k)/(nx*ny) - gmeanp)/(nx*ny)
-   !      end do
-   !   end do
-   !end do
+
       
    call nvtxEndRange
 
@@ -1006,16 +995,53 @@ do t=tstart,tfin
    !$acc end kernels
 
    ! find local maximum velocity
-   uc=maxval(u)
-   vc=maxval(v)
-   wc=maxval(w)
-   umax=max(wc,max(uc,vc))
+   umax=0.d0
+   vmax=0.d0
+   wmax=0.d0
+   !$acc kernels 
+   do k=1+halo_ext, piX%shape(3)-halo_ext
+      do j=1+halo_ext, piX%shape(2)-halo_ext
+         do i=1,nx
+            umax=max(umax,u(i,j,k))
+            vmax=max(vmax,v(i,j,k))
+            wmax=max(wmax,w(i,j,k))
+         enddo
+      enddo
+   enddo
+   !$acc end kernels
    call MPI_Allreduce(umax,gumax,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
-   cou=gumax*dt*dxi
+   call MPI_Allreduce(umax,gvmax,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
+   call MPI_Allreduce(umax,gwmax,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
+
+   cflx=gumax*dt*dxi
+   cfly=gvmax*dt*dyi
+   cflz=gwmax*dt*dzi
+   cou=max(cflx,cfly)
+   cou=max(cou,cflz)
    if (rank.eq.0) then
       write(*,*) "CFL (max among tasks)", cou
       if (cou .gt. 7) stop
    endif
+   
+
+   ! find flow-rate
+   ! X-oriented pencils
+   ! must be adapted when using non-uniform along z
+   ! computed only on face i=1 (same in the other cross-section)
+   !lflow=0.d0
+   !gflow=0.d0
+   !!$acc kernels
+   !do k=1+halo_ext, piX%shape(3)-halo_ext
+   !   do j=1+halo_ext, piX%shape(2)-halo_ext
+   !      lflow=lflow + u(i,j,k)*dy*dz
+   !   enddo
+   !enddo
+   !!$acc end kernels
+   !call MPI_Allreduce(lflow,gflow,1,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD, ierr)
+   !! find bulk velocity
+   !ubulk=gflow/lx/lz
+   !gradpx=gradpx + dt*(ubulk-1.d0)
+   !write(*,*) "ubulk", ubulk, "gradpx", gradpx
 
 
    call cpu_time(timef)
