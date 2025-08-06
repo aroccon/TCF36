@@ -48,8 +48,12 @@ real(8) :: k2
 !integer :: il, jl, ig, jg
 integer :: offsets(3), xoff, yoff
 integer :: np(3)
+! Alan Williamson classic
 real(kind=8), parameter :: alpha(3) = (/ 8.d0/15.d0,   5.d0/12.d0,   3.d0/4.d0 /)
 real(kind=8), parameter :: beta(3)  = (/ 0.d0,       -17.d0/60.d0,  -5.d0/12.d0 /)
+! Stage coefficients for diffusion-optimized SSP RK3
+!real(kind=8), parameter :: alpha(3) = (/ 0.444370493651235d0, 0.555629506348765d0, 1.0d0 /)
+!real(kind=8), parameter :: beta(3)   = (/ 0.0d0, -0.122243120495896d0, -0.377756879504104d0 /)
 
 ! Enable or disable phase field (acceleration eneabled by default)
 #define phiflag 0
