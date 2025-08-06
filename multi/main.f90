@@ -1011,8 +1011,8 @@ do t=tstart,tfin
    enddo
    !$acc end kernels
    call MPI_Allreduce(umax,gumax,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
-   call MPI_Allreduce(umax,gvmax,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
-   call MPI_Allreduce(umax,gwmax,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
+   call MPI_Allreduce(vmax,gvmax,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
+   call MPI_Allreduce(wmax,gwmax,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
 
    cflx=gumax*dt*dxi
    cfly=gvmax*dt*dyi
