@@ -35,9 +35,10 @@ real(8), device, allocatable :: kx_d(:), ky_d(:)
 complex(8), allocatable :: psi(:)
 real(8), allocatable :: ua(:,:,:)
 real(8), allocatable :: uaa(:,:,:)
-real(8), allocatable :: psi_real(:)
+! real(8), allocatable :: psi_real(:)
 ! real(8), device, allocatable :: psi_real_d(:)
 complex(8), device, allocatable :: psi_d(:)
+real(8), device, allocatable :: vel_d(:) ! only used for implicit diffusion in z
 complex(8), pointer, device, contiguous :: work_d(:), work_halo_d(:), work_d_d2z(:), work_halo_d_d2z(:)
 character(len=40) :: namefile
 character(len=4) :: itcount
@@ -55,8 +56,10 @@ real(kind=8), parameter :: beta(3)  = (/ 0.d0,       -17.d0/60.d0,  -5.d0/12.d0 
 !real(kind=8), parameter :: alpha(3) = (/ 0.444370493651235d0, 0.555629506348765d0, 1.0d0 /)
 !real(kind=8), parameter :: beta(3)   = (/ 0.0d0, -0.122243120495896d0, -0.377756879504104d0 /)
 
-! Enable or disable phase field (acceleration eneabled by default)
+! Enable or disable phase field 
 #define phiflag 0
+! Implicit diffusion along z flag (to be implemented)
+#define impdiff 0 
 
 !########################################################################################################################################
 ! 1. INITIALIZATION OF MPI AND cuDECOMP AUTOTUNING : START
@@ -135,15 +138,6 @@ options%halo_extents(:) = halo
 options%halo_periods(:) = halo_periods
 options%halo_axis = 1
 CHECK_CUDECOMP_EXIT(cudecompGridDescCreate(handle, grid_desc, config, options))
-
-! Print information on configuration
-!if (rank == 0) then
-!   write(*,"(' Running on ', i0, ' x ', i0, ' process grid ...')") config%pdims(1), config%pdims(2)
-!   write(*,"(' Using ', a, ' transpose backend ...')") &
-!            cudecompTransposeCommBackendToString(config%transpose_comm_backend)
-!   write(*,"(' Using ', a, ' halo backend ...')") &
-!            cudecompHaloCommBackendToString(config%halo_comm_backend)
-!endif
 
 
 ! Get pencil info for the grid descriptor in the physical space
@@ -255,10 +249,13 @@ allocate(ky_d, source=ky)
 ! START STEP 2: ALLOCATE ARRAYS
 !########################################################################################################################################
 ! allocate arrays
-allocate(psi(max(nElemX, nElemY, nElemZ))) !largest among the pencil
-allocate(psi_real(max(nElemX, nElemY, nElemZ))) !largest among the pencil
+!allocate(psi(max(nElemX, nElemY, nElemZ))) !largest among the pencil (debug only)
+!allocate(psi_real(max(nElemX, nElemY, nElemZ))) !largest among the pencil (debug only)
 allocate(psi_d(max(nElemX_d2z, nElemY_d2z, nElemZ_d2z))) ! phi on device
-allocate(ua(nx, piX%shape(2), piX%shape(3)))
+!allocate(ua(nx, piX%shape(2), piX%shape(3))) (debug only)
+#if impdiff == 1
+allocate(vel_d(max(nElemX, nElemY, nElemZ))) !for implicit diffusion
+#endif
 
 ! Pressure variable
 allocate(rhsp(piX%shape(1), piX%shape(2), piX%shape(3))) 
@@ -270,7 +267,7 @@ allocate(u(piX%shape(1),piX%shape(2),piX%shape(3)),v(piX%shape(1),piX%shape(2),p
 ! allocate(ustar(piX%shape(1),piX%shape(2),piX%shape(3)),vstar(piX%shape(1),piX%shape(2),piX%shape(3)),wstar(piX%shape(1),piX%shape(2),piX%shape(3))) ! provisional velocity field
 allocate(rhsu(piX%shape(1),piX%shape(2),piX%shape(3)),rhsv(piX%shape(1),piX%shape(2),piX%shape(3)),rhsw(piX%shape(1),piX%shape(2),piX%shape(3))) ! right hand side u,v,w
 allocate(rhsu_o(piX%shape(1),piX%shape(2),piX%shape(3)),rhsv_o(piX%shape(1),piX%shape(2),piX%shape(3)),rhsw_o(piX%shape(1),piX%shape(2),piX%shape(3))) ! right hand side u,v,w
-allocate(div(piX%shape(1),piX%shape(2),piX%shape(3)))
+!allocate(div(piX%shape(1),piX%shape(2),piX%shape(3))) (debug only)
 !PFM variables
 #if phiflag == 1
 allocate(phi(piX%shape(1),piX%shape(2),piX%shape(3)),rhsphi(piX%shape(1),piX%shape(2),piX%shape(3)))
@@ -562,7 +559,7 @@ do t=tstart,tfin
    !########################################################################################################################################
    ! START STEP 5: USTAR COMPUTATION (PROJECTION STEP)
    !########################################################################################################################################
-   ! 5.1 compute rhs 
+   ! 5.1 compute rhs (explicit or explicti + y-diff implicit)
    ! 5.2 obtain ustar and store old rhs in rhs_o
    ! 5.3 Call halo exchnages along Y and Z for u,v,w
 
@@ -607,6 +604,8 @@ do t=tstart,tfin
                rhsv(i,j,k)=-(h21+h22+h23)
                rhsw(i,j,k)=-(h31+h32+h33)
                ! viscous term
+               #if impdiff == 0
+               ! all diffusive terms are treated explicitely
                h11 = mu*(u(ip,j,k)-2.d0*u(i,j,k)+u(im,j,k))*ddxi
                h12 = mu*(u(i,jp,k)-2.d0*u(i,j,k)+u(i,jm,k))*ddyi
                h13 = mu*(u(i,j,kp)-2.d0*u(i,j,k)+u(i,j,km))*ddzi
@@ -619,6 +618,19 @@ do t=tstart,tfin
                rhsu(i,j,k)=rhsu(i,j,k)+(h11+h12+h13)*rhoi
                rhsv(i,j,k)=rhsv(i,j,k)+(h21+h22+h23)*rhoi
                rhsw(i,j,k)=rhsw(i,j,k)+(h31+h32+h33)*rhoi
+               #endif
+               #if impdiff == 1
+               ! x- and -y diffusive terms treated explicitely, z-implicit (done after)
+               h11 = mu*(u(ip,j,k)-2.d0*u(i,j,k)+u(im,j,k))*ddxi
+               h12 = mu*(u(i,jp,k)-2.d0*u(i,j,k)+u(i,jm,k))*ddyi
+               h21 = mu*(v(ip,j,k)-2.d0*v(i,j,k)+v(im,j,k))*ddxi
+               h22 = mu*(v(i,jp,k)-2.d0*v(i,j,k)+v(i,jm,k))*ddyi
+               h31 = mu*(w(ip,j,k)-2.d0*w(i,j,k)+w(im,j,k))*ddxi
+               h32 = mu*(w(i,jp,k)-2.d0*w(i,j,k)+w(i,jm,k))*ddyi
+               rhsu(i,j,k)=rhsu(i,j,k)+(h11+h12)*rhoi
+               rhsv(i,j,k)=rhsv(i,j,k)+(h21+h22)*rhoi
+               rhsw(i,j,k)=rhsw(i,j,k)+(h31+h32)*rhoi
+               #endif
                ! Pressure driven
                rhsu(i,j,k)=rhsu(i,j,k) - gradpx
                rhsv(i,j,k)=rhsv(i,j,k) - gradpy
@@ -746,13 +758,61 @@ do t=tstart,tfin
          enddo
       enddo
       !$acc end kernels
+
+      !if z-diffusione is treated implicitely call the TDMA solver for each component
+      #if impdiff == 1
+      ! work in progress, do not use atm
+
+      ! u-component
+      !!$acc host_data use_device(u)
+      !CHECK_CUDECOMP_EXIT(cudecompTransposeXToY(handle, grid_desc,     u, vel_d, work_d, CUDECOMP_DOUBLE))
+      !CHECK_CUDECOMP_EXIT(cudecompTransposeYToZ(handle, grid_desc, vel_d, vel_d, work_d, CUDECOMP_DOUBLE)) 
+      !!$acc end host_data
+
+      !call tdmau
+      !! this tdma work with a system with dimension nz and no ghost nodes
+
+      !!$acc host_data use_device(u)
+      !CHECK_CUDECOMP_EXIT(cudecompTransposeZToY(handle, grid_desc, vel_d, vel_d, work_d, CUDECOMP_DOUBLE))
+      !CHECK_CUDECOMP_EXIT(cudecompTransposeYToX(handle, grid_desc, vel_d,     u, work_d, CUDECOMP_DOUBLE)) 
+      !!$acc end host_data
+
+      ! v-component
+      !!$acc host_data use_device(v)
+      !CHECK_CUDECOMP_EXIT(cudecompTransposeXToY(handle, grid_desc,     v, vel_d, work_d, CUDECOMP_DOUBLE))
+      !CHECK_CUDECOMP_EXIT(cudecompTransposeYToZ(handle, grid_desc, vel_d, vel_d, work_d, CUDECOMP_DOUBLE)) 
+      !!$acc end host_data
+
+      !call tdmav
+      ! this tdma work with a system with dimension nz and no ghost nodes
+
+      !!$acc host_data use_device(v)
+      !CHECK_CUDECOMP_EXIT(cudecompTransposeZToY(handle, grid_desc, vel_d, vel_d, work_d, CUDECOMP_DOUBLE))
+      !CHECK_CUDECOMP_EXIT(cudecompTransposeYToX(handle, grid_desc, vel_d,     v, work_d, CUDECOMP_DOUBLE)) 
+      !!$acc end host_data
+
+      ! w-component
+      !!$acc host_data use_device(w)
+      !CHECK_CUDECOMP_EXIT(cudecompTransposeXToY(handle, grid_desc,     w, vel_d, work_d, CUDECOMP_DOUBLE))
+      !CHECK_CUDECOMP_EXIT(cudecompTransposeYToZ(handle, grid_desc, vel_d, vel_d, work_d, CUDECOMP_DOUBLE)) 
+      !!$acc end host_data
+
+      !call tdmaw
+      ! this tdma work with a system with dimension nz+1 and no ghost nodes
+
+      !!$acc host_data use_device(w)
+      !!CHECK_CUDECOMP_EXIT(cudecompTransposeZToY(handle, grid_desc, vel_d, vel_d, work_d, CUDECOMP_DOUBLE))
+      !!CHECK_CUDECOMP_EXIT(cudecompTransposeYToX(handle, grid_desc, vel_d,     w, work_d, CUDECOMP_DOUBLE)) 
+      !!$acc end host_data
+
+      #endif
+
       
    enddo
    !########################################################################################################################################
    ! END STEP 5: USTAR COMPUTATION 
    !########################################################################################################################################
    call nvtxEndRange
-
 
 
 
