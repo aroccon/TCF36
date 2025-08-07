@@ -520,9 +520,9 @@ do t=tstart,tfin
                rhsphi(i,j,k)=rhsphi(i,j,k)-gamma*((0.25d0*(1.d0-tanh_psi(ip,j,k)*tanh_psi(ip,j,k))*normx(ip,j,k) - &
                                                       0.25d0*(1.d0-tanh_psi(im,j,k)*tanh_psi(im,j,k))*normx(im,j,k))*0.5*dxi + &
                                                      (0.25d0*(1.d0-tanh_psi(i,jp,k)*tanh_psi(i,jp,k))*normy(i,jp,k) - &
-                                                      0.25d0*(1.d0-tanh_psi(i,jm,k)*tanh_psi(i,jm,k))*normy(i,jm,k))*0.5*dyi + &
+                                                      0.25d0*(1.d0-tanh_psi(i,jm,k)*tanh_psi(i,jm,k))*normy(i,jm,k))*0.5*dxi + &
                                                      (0.25d0*(1.d0-tanh_psi(i,j,kp)*tanh_psi(i,j,kp))*normz(i,j,kp) - &
-                                                      0.25d0*(1.d0-tanh_psi(i,j,km)*tanh_psi(i,j,km))*normz(i,j,km))*0.5*dzi)
+                                                      0.25d0*(1.d0-tanh_psi(i,j,km)*tanh_psi(i,j,km))*normz(i,j,km))*0.5*dxi)
             enddo
         enddo
     enddo
@@ -653,7 +653,7 @@ do t=tstart,tfin
                km=k-1
                if (ip .gt. nx) ip=1
                if (im .lt. 1) im=nx
-               chempot=phi(i,j,k)*(1.d0-phi(i,j,k))*(1.d0-2.d0*phi(i,j,k))*epsi-eps*((phi(ip,j,k)-2.d0*phi(i,j,k) + phi(im,j,k))*ddxi + (phi(i,jp,k)+-2.d0*phi(i,j,k) + phi(i,jm,k))*ddyi + (phi(i,j,kp)-2.d0*phi(i,j,k) + phi(i,j,km))*ddzi).
+               chempot=phi(i,j,k)*(1.d0-phi(i,j,k))*(1.d0-2.d0*phi(i,j,k))*epsi-eps*(phi(ip,j,k)+phi(im,j,k)+phi(i,jp,k)+phi(i,jm,k)+phi(i,j,kp)+phi(i,j,km)- 6.d0*phi(i,j,k))*ddxi
                ! chempot*gradphi
                fxst(i,j,k)=6.d0*sigma*chempot*0.5d0*(phi(ip,j,k)-phi(im,j,k))*dxi
                fyst(i,j,k)=6.d0*sigma*chempot*0.5d0*(phi(i,jp,k)-phi(i,jm,k))*dyi
@@ -875,7 +875,6 @@ do t=tstart,tfin
    offsets(piZ_d2z%order(2)) = piZ_d2z%lo(2) - 1
    offsets(piZ_d2z%order(3)) = piZ_d2z%lo(3) - 1
 
-
    xoff = offsets(1)
    yoff = offsets(2)
    npx = np(1)
@@ -884,7 +883,7 @@ do t=tstart,tfin
 
    call nvtxStartRange("Solution")
 
-   !$acc parallel loop collapse(2) gang private(a, b, c, d, factor, sol) 
+   !$acc parallel loop collapse(2) gang private(a, b, c, d, factor) 
    do jl = 1, npy
       do il = 1, npx
          ! compute index global wavenumber ig and jg
@@ -933,17 +932,17 @@ do t=tstart,tfin
          end do
 
          ! Back substitution
-         sol(nz+1) = d(nz+1)/b(nz+1)
+         psi3d(nz+1,il,jl) = d(nz+1)/b(nz+1)
          ! check on pivot like flutas?
          !$acc loop seq
-         do k = nz, 0, -1
-            sol(k) = (d(k) - c(k)*sol(k+1))/b(k)
+         do k = nz, 1, -1
+            psi3d(k,il,jl) = (d(k) - c(k)*psi3d(k+1,il,jl))/b(k)
          end do
 
          ! Store solution in array that do the back FFT
-         do k=1,nz
-            psi3d(k,il,jl) = sol(k)
-         enddo 
+         !do k=1,nz
+         !   psi3d(k,il,jl) = sol(k)
+         !enddo 
       end do
    end do
 
@@ -1032,7 +1031,7 @@ do t=tstart,tfin
 
    ! Re-impose BC on u,v and w at k=1 and kg=nz (for u and v) and kg=nz+1
    ! can be improved accessing directly kg?
-   !$acc kernels
+   !$acc parallel loop collapse(3)
    do k=1, piX%shape(3)
       do j=1, piX%shape(2)
          do i=1,nx
@@ -1053,13 +1052,12 @@ do t=tstart,tfin
          enddo
       enddo
    enddo
-   !$acc end kernels
 
    ! find local maximum velocity
    umax=0.d0
    vmax=0.d0
    wmax=0.d0
-   !$acc kernels 
+   !$acc parallel loop collapse(3) reduction(max:umax,vmax,wmax)
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
@@ -1069,7 +1067,7 @@ do t=tstart,tfin
          enddo
       enddo
    enddo
-   !$acc end kernels
+
    call MPI_Allreduce(umax,gumax,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
    call MPI_Allreduce(vmax,gvmax,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
    call MPI_Allreduce(wmax,gwmax,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
