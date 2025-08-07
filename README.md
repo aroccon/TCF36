@@ -1,6 +1,12 @@
 # TCF36
 
 Extended version of MHIT36 for turbulent channel flow.
+Finite-difference code based on the fractional step method.
+
+Time integration, two options:
+- All the terms explicit using RK3 (working)
+- CN for z-diffusive terms and RK3 for the rest of the terms (to be implemented, only skeleton is present) 
+
 
 If you use this code, please cite the following work: 
 ```bibtex
@@ -30,6 +36,7 @@ If you use this code, please cite the following work:
 - Folder multi: contains the source-code of the multi GPU version of the code. Use local.sh, leo.sh or mn5.sh to compile and run the code; the multi GPU version relies on cuDecomp for pencils transpositions and halo exchanges.
 - Autotuning of the multi-GPU version: Default pr=0 and pc=0 enables autotuging (when cuDecomp is initialized), cuDecomp will perform an autotuning at the start finding the best decomposition (the only input is the total number of tasks). In this way, everyhting is automatic and the code does not need to be recompiled when changing the number of MPI processes.
 - A conditional compilation flag is used to enable or not the phase-field module. By default is single-phase only.
+- A conditional compilation flag is used to enable or not implicit diffusion integration along z.
 
 ## Turbulent channel flow 
 
@@ -38,5 +45,5 @@ If you use this code, please cite the following work:
 
 ## Contributing
 
-We welcome all contributions that can enhance MHIT36, including bug fixes, performance improvements, and new features. 
-If you would like to contribute, please contact aroccon or open an Issue in the repository.
+We welcome all contributions that can enhance TCF36, including bug fixes, performance improvements, and new features. 
+If you would like to contribute, please contact me or open an Issue in the repository.
