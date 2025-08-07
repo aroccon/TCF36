@@ -208,7 +208,8 @@ subroutine tdmaw
          end do
 
          ! Store solution in array that do the back FFT
-         do k=1,nz+1
+         ! only up to nz, because i am not trasposing the halo, i can eventually
+         do k=1,nz
             vel3d(k,il,jl) = sol(k)
          enddo 
       end do

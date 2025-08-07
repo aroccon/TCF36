@@ -32,8 +32,8 @@ read(55,*) epsr
 ! compute pre-defined constant 
 twopi=8.0_8*atan(1.0_8)
 pi=twopi/2.d0
-lx=8.d0!*twopi
-ly=4.d0!twopi
+lx=4.d0!*twopi
+ly=2.d0!twopi
 lz=2.d0
 dx = lx/nx
 dy = ly/ny

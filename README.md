@@ -7,7 +7,7 @@ If you use this code, please cite the following work:
   @article{roccon2025,
   title   = {MHIT36: A Phase-Field Code for Gpu Simulations of Multiphase Homogeneous Isotropic Turbulence},
   author  = {Roccon, A. and Enzenberger, L. and Zaza, D. and Soldati, A.},
-  journal = {SSRN},
+  journal = {Computer Physics Communications (in press)},
   year    = {2025},
   doi     = {http://dx.doi.org/10.2139/ssrn.5264052}
 }
@@ -21,6 +21,7 @@ If you use this code, please cite the following work:
 - TDMA validation ✅ 
 - Turbulent channel flow 🚧 (looks promising)
 - Stretched grids 🚧
+- Implicit diffusion along z (skeleton and flag introduced) 🚧
 
 ## Run the code
 

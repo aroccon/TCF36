@@ -2,7 +2,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-nx, ny, nz = 64, 64, 64
+nx, ny, nz = 256, 128, 128
 
 data = np.fromfile('output/u_00070000.dat', dtype=np.float64)  # or float64
 print("Data size:", data.size)
