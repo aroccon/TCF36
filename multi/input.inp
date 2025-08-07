@@ -4,7 +4,7 @@
 5000        ! Saving frequency
 0           ! inflow condition (0=Taylor green, 1=read from fields)
 0           ! phase-field initial condition (0=circular drop, 1=read from fields)
-0.0001      ! dt for the simulation
+0.0003      ! dt for the simulation
 0.006       ! mu (viscosity)
 1.000       ! density
 -1.0         ! Pressure gradient along x (negative if flow along x) 
