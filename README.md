@@ -43,6 +43,10 @@ If you use this code, please cite the following work:
 
 ![Test](val/tcf.png)
 
+## Performance and resolution tested (NS only)
+
+- 256 x 128 x 200 - 45 ms/iter - 2 x RTX5000 16GB 
+- 2048 x 768 x 576 - 410 ms/iter - 4 x A100 64 GB 
 
 ## Contributing
 
