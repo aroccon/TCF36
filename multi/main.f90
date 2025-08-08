@@ -302,15 +302,15 @@ CHECK_CUDECOMP_EXIT(cudecompMalloc(handle, grid_descD2Z, work_halo_d_d2z, nElemW
 if (restart .eq. 0) then !fresh start Taylor Green or read from file in init folder
 if (rank.eq.0) write(*,*) "Initialize velocity field (fresh start)"
    if (inflow .eq. 0) then
-      if (rank.eq.0) write(*,*) "Initialize Taylor-green"
+      if (rank.eq.0) write(*,*) "Initialize laminar flow (x) + 3D perturbation"
       do k = 1+halo_ext, piX%shape(3)-halo_ext
          kg = piX%lo(3) + k - 2
          do j = 1+halo_ext, piX%shape(2)-halo_ext
             jg = piX%lo(2) + j - 2
             do i = 1, piX%shape(1)
                amp=3.d0
-               mx=2.001d0
-               my=2.d0
+               mx=3.03d0
+               my=2.02d0
                mz=4.d0
                !3D divergence free flow with fluctuations that satisfies the boundary conditions
                u(i,j,k) =  20.d0*(1.d0 - ((2*z(kg) - lz)/lz)**2) !
@@ -703,7 +703,7 @@ do t=tstart,tfin
 
       #else
       ! 5.2 find u, v and w star (RK3), only in the inner nodes 
-      !$acc kernels
+      !$acc parallel loop collapse(3)
       do k=1+halo_ext, piX%shape(3)-halo_ext
          do j=1+halo_ext, piX%shape(2)-halo_ext
             do i=1,nx
@@ -716,7 +716,7 @@ do t=tstart,tfin
             enddo
          enddo
       enddo
-      !$acc end kernels
+      !!$acc end kernels
       #endif
 
       ! 5.3 update halos (y and z directions), required to then compute the RHS of Poisson equation because of staggered grid
@@ -735,29 +735,48 @@ do t=tstart,tfin
 
       ! impose BC on u,v and w at k=1 and kg=nz (for u and v) and kg=nz+1
       ! It can be improved, marginal gain, easier to understand this format
-      !$acc kernels
-      do k=1, piX%shape(3)
-         do j=1, piX%shape(2)
-            do i=1,nx
-               ! bottom wall
-               kg = piX%lo(3)  + k -2
-               if (kg .eq. 1) then
-               u(i,j,k)=0.d0
-               v(i,j,k)=0.d0
-               w(i,j,k)=0.d0
-               endif
-               ! top wall
-               if (kg .eq. nz) then
-               u(i,j,k)=0.d0
-               v(i,j,k)=0.d0
-               endif
-               if (kg .eq. nz+1) then
-               w(i,j,k)=0.d0
-               endif
-            enddo
+      !$acc parallel loop collapse(2)
+      do j=1, piX%shape(2)
+         do i=1,nx
+            ! bottom wall
+            k = 2
+            kg = piX%lo(3)  + k -2
+            if (kg .eq. 1) then
+            u(i,j,k)=0.d0
+            v(i,j,k)=0.d0
+            w(i,j,k)=0.d0
+            endif
+            ! top wall
+            k = piX%shape(3) - halo_ext
+            kg = piX%lo(3)  + k -2
+            if (kg .eq. nz) then
+            u(i,j,k)=0.d0
+            v(i,j,k)=0.d0
+            endif
+            k = piX%shape(3) + 1  - halo_ext
+            kg = piX%lo(3)  + k -2
+            if (kg .eq. nz+1) then
+            w(i,j,k)=0.d0
+            endif
          enddo
       enddo
-      !$acc end kernels
+      
+
+      !do k=1, piX%shape(3)
+      !   do j=1, piX%shape(2)
+      !      do i=1,nx
+      !         ! top wall
+      !         if (kg .eq. nz) then
+      !         u(i,j,k)=0.d0
+      !         v(i,j,k)=0.d0
+      !         endif
+      !         if (kg .eq. nz+1) then
+      !         w(i,j,k)=0.d0
+      !         endif
+      !      enddo
+      !   enddo
+      !enddo
+      !!$acc end kernels
 
       !if z-diffusione is treated implicitely call the TDMA solver for each component
       #if impdiff == 1
@@ -958,14 +977,13 @@ do t=tstart,tfin
    ! psi(y,z,kx) -> psi(kx,y,z)
    CHECK_CUDECOMP_EXIT(cudecompTransposeYToX(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX,[0,0,0], piX_d2z%halo_extents))
    !$acc host_data use_device(p)
-   ! psi(kx,y,z) -> psi(x,y,z)
+   ! psi(kx,y,z) -> p(x,y,z)
    status = cufftExecZ2D(planXb, psi_d, p)
    if (status /= CUFFT_SUCCESS) write(*,*) 'X inverse error: ', status
    !$acc end host_data
 
-   ! normalize pressure 
-   !meanp = 0.0d0
-   !$acc parallel loop
+   ! normalize pressure (must be done here, not in the TDMA)
+   !$acc parallel loop collapse(3)
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
@@ -1031,25 +1049,29 @@ do t=tstart,tfin
 
    ! Re-impose BC on u,v and w at k=1 and kg=nz (for u and v) and kg=nz+1
    ! can be improved accessing directly kg?
-   !$acc parallel loop collapse(3)
-   do k=1, piX%shape(3)
-      do j=1, piX%shape(2)
-         do i=1,nx
-            ! bottom wall
-            kg = piX%lo(3)  + k - 2
-            if (kg .eq. 1) then
-            u(i,j,k)=0.d0
-            v(i,j,k)=0.d0
-            w(i,j,k)=0.d0
-            endif
-            if (kg .eq. nz) then
-            u(i,j,k)=0.d0
-            v(i,j,k)=0.d0
-            endif
-            if (kg .eq. nz+1) then
-            w(i,j,k)=0.d0
-            endif
-         enddo
+   !$acc parallel loop collapse(2)
+   do j=1, piX%shape(2)
+      do i=1,nx
+         ! bottom wall
+         k = 2
+         kg = piX%lo(3)  + k -2
+         if (kg .eq. 1) then
+         u(i,j,k)=0.d0
+         v(i,j,k)=0.d0
+         w(i,j,k)=0.d0
+         endif
+         ! top wall
+         k = piX%shape(3) - halo_ext
+         kg = piX%lo(3)  + k -2
+         if (kg .eq. nz) then
+         u(i,j,k)=0.d0
+         v(i,j,k)=0.d0
+         endif
+         k = piX%shape(3) + 1  - halo_ext
+         kg = piX%lo(3)  + k -2
+         if (kg .eq. nz+1) then
+         w(i,j,k)=0.d0
+         endif
       enddo
    enddo
 

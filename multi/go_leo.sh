@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --account="IscrB_SONORA"
+#SBATCH --account="IscrB_EXCEED"
 #SBATCH --job-name="cudec"
 #SBATCH --time=00:30:00
 #SBATCH --nodes=1      ##adjust

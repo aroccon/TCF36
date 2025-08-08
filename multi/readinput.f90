@@ -60,7 +60,7 @@ if (rank .eq. 0) then
     write(*,*) "   ██    ██      ██           ██ ██    ██ " 
     write(*,*) "   ██     ██████ ██      ██████   ██████  "
     write(*,*) "------------------------------------------"
-    write(*,*) 'Grid:', nx, 'x', nx, 'x', nx
+    write(*,*) 'Grid:', nx, 'x', ny, 'x', nz
     write(*,*) "Restart ", restart
     write(*,*) "Tstart  ", tstart
     write(*,*) "Tfin    ", tfin
