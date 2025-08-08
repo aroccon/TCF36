@@ -733,50 +733,21 @@ do t=tstart,tfin
       CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, w, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
       !$acc end host_data 
 
-      ! impose BC on u,v and w at k=1 and kg=nz (for u and v) and kg=nz+1
-      ! It can be improved, marginal gain, easier to understand this format
-      !$acc parallel loop collapse(2)
-      do j=1, piX%shape(2)
-         do i=1,nx
-            ! bottom wall
-            k = 2
-            kg = piX%lo(3)  + k -2
-            if (kg .eq. 1) then
-            u(i,j,k)=0.d0
-            v(i,j,k)=0.d0
-            w(i,j,k)=0.d0
-            endif
-            ! top wall
-            k = piX%shape(3) - halo_ext
-            kg = piX%lo(3)  + k -2
-            if (kg .eq. nz) then
-            u(i,j,k)=0.d0
-            v(i,j,k)=0.d0
-            endif
-            k = piX%shape(3) + 1  - halo_ext
-            kg = piX%lo(3)  + k -2
-            if (kg .eq. nz+1) then
-            w(i,j,k)=0.d0
-            endif
+      ! impose boundary conditions, can be optimized, no real gain
+      !$acc parallel loop collapse(3)
+      do k=1, piX%shape(3)
+         do j=1, piX%shape(2)
+            do i=1,nx
+               kg = piX%lo(3)  + k -2
+               if (kg .eq. 1)    u(i,j,k)=0.d0       ! bottom wall
+               if (kg .eq. 1)    v(i,j,k)=0.d0       ! bottom wall
+               if (kg .eq. 1)    w(i,j,k)=0.d0       ! bottom wall
+               if (kg .eq. nz)   u(i,j,k)=0.d0       ! top wall
+               if (kg .eq. nz)   v(i,j,k)=0.d0       ! top wall
+               if (kg .eq. nz+1) w(i,j,k)=0.d0       ! top wall
+            enddo
          enddo
       enddo
-      
-
-      !do k=1, piX%shape(3)
-      !   do j=1, piX%shape(2)
-      !      do i=1,nx
-      !         ! top wall
-      !         if (kg .eq. nz) then
-      !         u(i,j,k)=0.d0
-      !         v(i,j,k)=0.d0
-      !         endif
-      !         if (kg .eq. nz+1) then
-      !         w(i,j,k)=0.d0
-      !         endif
-      !      enddo
-      !   enddo
-      !enddo
-      !!$acc end kernels
 
       !if z-diffusione is treated implicitely call the TDMA solver for each component
       #if impdiff == 1
@@ -1047,42 +1018,22 @@ do t=tstart,tfin
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, w, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
 
-   ! Re-impose BC on u,v and w at k=1 and kg=nz (for u and v) and kg=nz+1
-   ! can be improved accessing directly kg?
-   !$acc parallel loop collapse(2)
-   do j=1, piX%shape(2)
-      do i=1,nx
-         ! bottom wall
-         k = 2
-         kg = piX%lo(3)  + k -2
-         if (kg .eq. 1) then
-         u(i,j,k)=0.d0
-         v(i,j,k)=0.d0
-         w(i,j,k)=0.d0
-         endif
-         ! top wall
-         k = piX%shape(3) - halo_ext
-         kg = piX%lo(3)  + k -2
-         if (kg .eq. nz) then
-         u(i,j,k)=0.d0
-         v(i,j,k)=0.d0
-         endif
-         k = piX%shape(3) + 1  - halo_ext
-         kg = piX%lo(3)  + k -2
-         if (kg .eq. nz+1) then
-         w(i,j,k)=0.d0
-         endif
-      enddo
-   enddo
-
-   ! find local maximum velocity
+   ! impose boundary conditions, can be optimized, no real gain
+   ! Also find the maximum velocity for CFL
    umax=0.d0
    vmax=0.d0
    wmax=0.d0
    !$acc parallel loop collapse(3) reduction(max:umax,vmax,wmax)
-   do k=1+halo_ext, piX%shape(3)-halo_ext
-      do j=1+halo_ext, piX%shape(2)-halo_ext
+   do k=1, piX%shape(3)
+      do j=1, piX%shape(2)
          do i=1,nx
+            kg = piX%lo(3)  + k -2
+            if (kg .eq. 1)    u(i,j,k)=0.d0       ! bottom wall
+            if (kg .eq. 1)    v(i,j,k)=0.d0       ! bottom wall
+            if (kg .eq. 1)    w(i,j,k)=0.d0       ! bottom wall
+            if (kg .eq. nz)   u(i,j,k)=0.d0       ! top wall
+            if (kg .eq. nz)   v(i,j,k)=0.d0       ! top wall
+            if (kg .eq. nz+1) w(i,j,k)=0.d0       ! top wall
             umax=max(umax,u(i,j,k))
             vmax=max(vmax,v(i,j,k))
             wmax=max(wmax,w(i,j,k))
