@@ -2,10 +2,11 @@
 
 Extended version of MHIT36 for turbulent channel flow.
 Finite-difference code based on the fractional step method.
+Solution of Navier-Stokes equations + phase-field method (ACDI).
 
 Time integration, two options:
-- All the terms explicit using RK3 (working)
-- CN for z-diffusive terms and RK3 for the rest of the terms (to be implemented, only skeleton is present) 
+- All the terms explicit using RK3 (for both NS + PFM, working)
+- CN for z-diffusive terms and RK3 for the rest of the terms (to be implemented, only skeleton is present), PFM is explicit.
 
 
 If you use this code, please cite the following work: 
@@ -15,7 +16,7 @@ If you use this code, please cite the following work:
   author  = {Roccon, A. and Enzenberger, L. and Zaza, D. and Soldati, A.},
   journal = {Computer Physics Communications (in press)},
   year    = {2025},
-  doi     = {http://dx.doi.org/10.2139/ssrn.5264052}
+  doi     = {https://doi.org/10.1016/j.cpc.2025.109804}
 }
 ```
 
@@ -36,7 +37,7 @@ If you use this code, please cite the following work:
 - Folder multi: contains the source-code of the multi GPU version of the code. Use local.sh, leo.sh or mn5.sh to compile and run the code; the multi GPU version relies on cuDecomp for pencils transpositions and halo exchanges.
 - Autotuning of the multi-GPU version: Default pr=0 and pc=0 enables autotuging (when cuDecomp is initialized), cuDecomp will perform an autotuning at the start finding the best decomposition (the only input is the total number of tasks). In this way, everyhting is automatic and the code does not need to be recompiled when changing the number of MPI processes.
 - A conditional compilation flag is used to enable or not the phase-field module. By default is single-phase only.
-- A conditional compilation flag is used to enable or not implicit diffusion integration along z.
+- A conditional compilation flag is used to enable or not implicit diffusion integration along z; this feature is not yet implemented.
 
 ## Turbulent channel flow 
 
