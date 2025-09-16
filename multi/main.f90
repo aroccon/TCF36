@@ -29,7 +29,9 @@ integer :: status
 real(8), allocatable :: x(:), y(:), z(:), kx(:), ky(:)
 integer :: i,j,k,il,jl,kl,ig,jg,kg,t,stage
 integer :: im,ip,jm,jp,km,kp,last,idx
-double complex :: a(0:nz+1), b(0:nz+1), c(0:nz+1), d(0:nz+1), sol(0:nz+1)
+! TDMA variables
+double precision, allocatable :: a(:), b(:), c(:)
+double complex, allocatable :: d(:), sol(:)
 real(8), device, allocatable :: kx_d(:), ky_d(:)
 ! working arrays
 complex(8), allocatable :: psi(:)
@@ -268,6 +270,8 @@ allocate(u(piX%shape(1),piX%shape(2),piX%shape(3)),v(piX%shape(1),piX%shape(2),p
 allocate(rhsu(piX%shape(1),piX%shape(2),piX%shape(3)),rhsv(piX%shape(1),piX%shape(2),piX%shape(3)),rhsw(piX%shape(1),piX%shape(2),piX%shape(3))) ! right hand side u,v,w
 allocate(rhsu_o(piX%shape(1),piX%shape(2),piX%shape(3)),rhsv_o(piX%shape(1),piX%shape(2),piX%shape(3)),rhsw_o(piX%shape(1),piX%shape(2),piX%shape(3))) ! right hand side u,v,w
 !allocate(div(piX%shape(1),piX%shape(2),piX%shape(3))) (debug only)
+!TDMA solver
+allocate(a(0:nz+1),b(0:nz+1),c(0:nz+1),d(0:nz+1),sol(0:nz+1))
 !PFM variables
 #if phiflag == 1
 allocate(phi(piX%shape(1),piX%shape(2),piX%shape(3)),rhsphi(piX%shape(1),piX%shape(2),piX%shape(3)))
@@ -873,7 +877,7 @@ do t=tstart,tfin
 
    call nvtxStartRange("Solution")
 
-   !$acc parallel loop collapse(2) gang private(a, b, c, d, factor) 
+   !$acc parallel loop collapse(2) gang private(a,b,c,d,factor) 
    do jl = 1, npy
       do il = 1, npx
          ! compute index global wavenumber ig and jg
