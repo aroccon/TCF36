@@ -471,9 +471,9 @@ do t=tstart,tfin
                                  eps*(phi(i,jp,k)-2.d0*phi(i,j,k)+phi(i,jm,k))*ddxi + &                   
                                  eps*(phi(i,j,kp)-2.d0*phi(i,j,k)+phi(i,j,km))*ddxi)                      
             ! 4.1.3. Compute normals for sharpening term (gradient)
-            normx(i,j,k) = (psidi(ip,j,k) - psidi(im,j,k))
-            normy(i,j,k) = (psidi(i,jp,k) - psidi(i,jm,k))
-            normz(i,j,k) = (psidi(i,j,kp) - psidi(i,j,km))
+            normx(i,j,k) = 0.5d0*(psidi(ip,j,k) - psidi(im,j,k))*dxi
+            normy(i,j,k) = 0.5d0*(psidi(i,jp,k) - psidi(i,jm,k))*dyi
+            normz(i,j,k) = 0.5d0*(psidi(i,j,kp) - psidi(i,j,km))*dzi
          enddo
       enddo
    enddo
@@ -524,9 +524,9 @@ do t=tstart,tfin
                rhsphi(i,j,k)=rhsphi(i,j,k)-gamma*((0.25d0*(1.d0-tanh_psi(ip,j,k)*tanh_psi(ip,j,k))*normx(ip,j,k) - &
                                                       0.25d0*(1.d0-tanh_psi(im,j,k)*tanh_psi(im,j,k))*normx(im,j,k))*0.5*dxi + &
                                                      (0.25d0*(1.d0-tanh_psi(i,jp,k)*tanh_psi(i,jp,k))*normy(i,jp,k) - &
-                                                      0.25d0*(1.d0-tanh_psi(i,jm,k)*tanh_psi(i,jm,k))*normy(i,jm,k))*0.5*dxi + &
+                                                      0.25d0*(1.d0-tanh_psi(i,jm,k)*tanh_psi(i,jm,k))*normy(i,jm,k))*0.5*dyi + &
                                                      (0.25d0*(1.d0-tanh_psi(i,j,kp)*tanh_psi(i,j,kp))*normz(i,j,kp) - &
-                                                      0.25d0*(1.d0-tanh_psi(i,j,km)*tanh_psi(i,j,km))*normz(i,j,km))*0.5*dxi)
+                                                      0.25d0*(1.d0-tanh_psi(i,j,km)*tanh_psi(i,j,km))*normz(i,j,km))*0.5*dzi)
             enddo
         enddo
     enddo
@@ -584,25 +584,15 @@ do t=tstart,tfin
                if (ip .gt. nx) ip=1  
                if (im .lt. 1) im=nx
                !  compute the products (conservative form)
-               h11 = (u(ip,j,k)+u(i,j,k))*(u(ip,j,k)+u(i,j,k))     - (u(i,j,k)+u(im,j,k))*(u(i,j,k)+u(im,j,k))
-               h12 = (u(i,jp,k)+u(i,j,k))*(v(i,jp,k)+v(im,jp,k))   - (u(i,j,k)+u(i,jm,k))*(v(i,j,k)+v(im,j,k))
-               h13 = (u(i,j,kp)+u(i,j,k))*(w(i,j,kp)+w(im,j,kp))   - (u(i,j,k)+u(i,j,km))*(w(i,j,k)+w(im,j,k))
-               h21 = (u(ip,j,k)+u(ip,jm,k))*(v(ip,j,k)+v(i,j,k))   - (u(i,j,k)+u(i,jm,k))*(v(i,j,k)+v(im,j,k))
-               h22 = (v(i,jp,k)+v(i,j,k))*(v(i,jp,k)+v(i,j,k))     - (v(i,j,k)+v(i,jm,k))*(v(i,j,k)+v(i,jm,k))
-               h23 = (w(i,j,kp)+w(i,jm,kp))*(v(i,j,kp)+v(i,j,k))   - (w(i,j,k)+w(i,jm,k))*(v(i,j,k)+v(i,j,km))
-               h31 = (w(ip,j,k)+w(i,j,k))*(u(ip,j,k)+u(ip,j,km))   - (w(i,j,k)+w(im,j,k))*(u(i,j,k)+u(i,j,km))
-               h32 = (v(i,jp,k)+v(i,jp,km))*(w(i,jp,k)+w(i,j,k))   - (v(i,j,k)+v(i,j,km))*(w(i,j,k)+w(i,jm,k))
-               h33 = (w(i,j,kp)+w(i,j,k))*(w(i,j,kp)+w(i,j,k))     - (w(i,j,k)+w(i,j,km))*(w(i,j,k)+w(i,j,km))
-               ! compute the derivative
-               h11=h11*0.25d0*dxi
-               h12=h12*0.25d0*dyi
-               h13=h13*0.25d0*dzi
-               h21=h21*0.25d0*dxi
-               h22=h22*0.25d0*dyi
-               h23=h23*0.25d0*dzi
-               h31=h31*0.25d0*dxi
-               h32=h32*0.25d0*dyi
-               h33=h33*0.25d0*dzi
+               h11 = 0.25d0((u(ip,j,k)+u(i,j,k))*(u(ip,j,k)+u(i,j,k))     - (u(i,j,k)+u(im,j,k))*(u(i,j,k)+u(im,j,k)))*dxi
+               h12 = 0.25d0((u(i,jp,k)+u(i,j,k))*(v(i,jp,k)+v(im,jp,k))   - (u(i,j,k)+u(i,jm,k))*(v(i,j,k)+v(im,j,k)))*dyi
+               h13 = 0.25d0((u(i,j,kp)+u(i,j,k))*(w(i,j,kp)+w(im,j,kp))   - (u(i,j,k)+u(i,j,km))*(w(i,j,k)+w(im,j,k)))*dzi
+               h21 = 0.25d0((u(ip,j,k)+u(ip,jm,k))*(v(ip,j,k)+v(i,j,k))   - (u(i,j,k)+u(i,jm,k))*(v(i,j,k)+v(im,j,k)))*dxi
+               h22 = 0.25d0((v(i,jp,k)+v(i,j,k))*(v(i,jp,k)+v(i,j,k))     - (v(i,j,k)+v(i,jm,k))*(v(i,j,k)+v(i,jm,k)))*dyi
+               h23 = 0.25d0((w(i,j,kp)+w(i,jm,kp))*(v(i,j,kp)+v(i,j,k))   - (w(i,j,k)+w(i,jm,k))*(v(i,j,k)+v(i,j,km)))*dzi
+               h31 = 0.25d0((w(ip,j,k)+w(i,j,k))*(u(ip,j,k)+u(ip,j,km))   - (w(i,j,k)+w(im,j,k))*(u(i,j,k)+u(i,j,km)))*dxi
+               h32 = 0.25d0((v(i,jp,k)+v(i,jp,km))*(w(i,jp,k)+w(i,j,k))   - (v(i,j,k)+v(i,j,km))*(w(i,j,k)+w(i,jm,k)))*dyi
+               h33 = 0.25d0((w(i,j,kp)+w(i,j,k))*(w(i,j,kp)+w(i,j,k))     - (w(i,j,k)+w(i,j,km))*(w(i,j,k)+w(i,j,km)))*dzi
                ! add to the rhs
                rhsu(i,j,k)=-(h11+h12+h13)
                rhsv(i,j,k)=-(h21+h22+h23)
@@ -657,11 +647,12 @@ do t=tstart,tfin
                km=k-1
                if (ip .gt. nx) ip=1
                if (im .lt. 1) im=nx
-               chempot=phi(i,j,k)*(1.d0-phi(i,j,k))*(1.d0-2.d0*phi(i,j,k))*epsi-eps*(phi(ip,j,k)+phi(im,j,k)+phi(i,jp,k)+phi(i,jm,k)+phi(i,j,kp)+phi(i,j,km)- 6.d0*phi(i,j,k))*ddxi
-               ! chempot*gradphi
-               fxst(i,j,k)=6.d0*sigma*chempot*0.5d0*(phi(ip,j,k)-phi(im,j,k))*dxi
-               fyst(i,j,k)=6.d0*sigma*chempot*0.5d0*(phi(i,jp,k)-phi(i,jm,k))*dyi
-               fzst(i,j,k)=6.d0*sigma*chempot*0.5d0*(phi(i,j,kp)-phi(i,j,km))*dzi
+               ! OLD chempot, CSF or LCSF should be better with ACDI
+               !chempot=phi(i,j,k)*(1.d0-phi(i,j,k))*(1.d0-2.d0*phi(i,j,k))*epsi-eps*(phi(ip,j,k)+phi(im,j,k)+phi(i,jp,k)+phi(i,jm,k)+phi(i,j,kp)+phi(i,j,km)- 6.d0*phi(i,j,k))*ddxi
+               curv=0.5d0*(normx(ip,j,k)-normx(im,j,k))*dxi + 0.5d0*(normy(i,jp,k)-normy(i,jm,k))*dyi + + 0.5d0*(normz(i,j,kp)-normz(i,j,km))*dzi
+               fxst(i,j,k)= -sigma*curv*0.5d0*(phi(ip,j,k)-phi(im,j,k))*dxi
+               fyst(i,j,k)= -sigma*curv*0.5d0*(phi(i,jp,k)-phi(i,jm,k))*dyi
+               fzst(i,j,k)= -sigma*curv*0.5d0*(phi(i,j,kp)-phi(i,j,km))*dzi
             enddo
          enddo
       enddo
