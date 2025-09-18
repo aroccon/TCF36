@@ -7,6 +7,7 @@ character(len=40) :: namedir,namefile
 character(len=8) :: numfile
 character(len=3) :: setnum
 logical :: check
+integer :: i,j,k,m
 
 
 namedir='../../multi/output/'
@@ -62,7 +63,7 @@ do k=1,nz
     enddo
   enddo
 enddo
-mean=mean/(real(nx*ny))
+mean=mean/(dble(nx*ny))
 
 
 ! rms
@@ -75,28 +76,51 @@ do k=1,nz
     enddo
   enddo
 enddo
-rms=rms/(real(nx*ny))
+rms=rms/(dble(nx*ny))
 rms=sqrt(rms)
 
-! to be implemented
-! flt
+! skw
+do k=1,nz
+  do i=1,nx
+    do j=1,ny
+      skw(k,1)=skw(k,1)+(u(i,k,j)-mean(k,1))**3
+      skw(k,2)=skw(k,2)+(v(i,k,j)-mean(k,2))**3
+      skw(k,3)=skw(k,3)+(w(i,k,j)-mean(k,3))**3
+    enddo
+  enddo
+enddo
+skw=skw/(dble(nx*ny))
 
 
 ! skw
+do k=1,nz
+  do i=1,nx
+    do j=1,ny
+      flt(k,1)=flt(k,1)+(u(i,k,j)-mean(k,1))**4
+      flt(k,2)=flt(k,2)+(v(i,k,j)-mean(k,2))**4
+      flt(k,3)=flt(k,3)+(w(i,k,j)-mean(k,3))**4
+    enddo
+  enddo
+enddo
+flt=flt/(dble(nx*ny))
+
+! normalization for SKW and FLT
+do k=1,nz
+  do m=1,3
+  skw(k,m)=skw(k,m)/rms(k,m)**3
+  flt(k,m)=flt(k,m)/rms(k,m)**4
+enddo
 
 
-! write output in a file (WIP)
-! this part is copied from FLOW36, must be adapted
+namefile = trim(namedir)//'stat_'//trim(numfile)//'.dat'
+open(66,status='replace',file=trim(namefile),form='formatted')
+write(66,'(7(a12,2x))') 'z','u mean','v mean','w mean','u rms','v rms','w rms','u skw','v skw','w skw','u flt','v flt','w flt'
+write(66,*)
 
-!open(66,status='replace',file='./output/statistics.dat',form='formatted')
+do k=1,nz
+  write(66,'(f12.5,2x,12(es12.5,2x))') z(i),mean(i,1),mean(i,2),mean(i,3),rms(i,1),rms(i,2),rms(i,3),skw(i,1),skw(i,2),skw(i,3),flt(i,1),flt(i,2),flt(i,3)
+end do
 
-!write(66,'(a,i8,a,3(i5),a)') 'Statistics gathered on ',counter,' flow fields, on a ',nx,ny,nz,' grid (nx,ny,nz)'
-!write(66,'(13(a12,2x))') 'z','u mean','v mean','w mean','u rms','v rms','w rms','u skw','v skw','w skw','u flt','v flt','w flt'
-!write(66,*)
-
-!do i=1,nz
-! write(66,'(f12.5,2x,12(es12.5,2x))') stats(i,1:13)
-!enddo
 
 deallocate(u,v,w,phi)
 deallocate(mean,rms,skw,flt)
