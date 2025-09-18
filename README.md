@@ -30,31 +30,27 @@ If you use this code, please cite the following work:
 - Stretched grids 🚧
 - Implicit diffusion along z (skeleton and flag introduced) 🚧
 
-# How to run the code
-## 1. Compile cuDecomp
-- First, build the **cuDecomp** library using the corresponding `*_lib.sh` script.  
-- The resulting files will be located in:
+## How to run TCF36
+**Compile cuDecomp**  
+- Build the library using the provided `*_lib.sh` script.  
+- Output locations:  
   - **Library:** `cuDecomp/build/lib`  
   - **Headers:** `cuDecomp/build/include`  
-- ⚠️ Ensure that cuDecomp is compiled using **NVIDIA HPC-SDK**.  
+- ⚠️ Compile using **NVIDIA HPC-SDK**.  
 
-## 2. Multi-GPU Source Code
-- The folder **`multi/`** contains the source code for the **multi-GPU** version.  
-- To compile and run:
-  - Use `local.sh`, `leo.sh`, or `mn5.sh` depending on your system.  
-- The multi-GPU version relies on **cuDecomp** for:
-  - Pencil decompositions and transpositions  
-  - Halo exchanges between GPUs  
+**Compile & run Multi-GPU version**  
+- Source code in **`multi/`**.  
+- Use `local.sh`, `leo.sh`, or `mn5.sh` depending on your system.  
+- Relies on cuDecomp for pencil decomposition, transpositions, and halo exchanges.  
 
-## 3. Autotuning of Multi-GPU Decomposition
-- By default, `pr=0` and `pc=0` enable **autotuning** when cuDecomp is initialized.  
-- cuDecomp will automatically determine the best process decomposition at runtime.  
-- The only required input is the **total number of MPI tasks**.  
-- ✅ This means you **do not need to recompile** the code when changing the number of MPI processes.  
+**Autotuning of decomposition**  
+- Default: `pr=0` and `pc=0` → enables **automatic process decomposition**.  
+- Only input needed: **total number of MPI tasks**.  
+- ✅ No recompilation required when changing MPI processes.  
 
-## 4. Conditional Compilation Flags
-- **Phase-field module**: Can be enabled or disabled. By default, only single-phase is used.  
-- **Implicit diffusion along z**: Can be enabled or disabled. ⚠️ This feature is **not yet implemented**.
+**Optional features (conditional compilation)**  
+- **Phase-field module:** Can be enabled or disabled. Default is single-phase.  
+- **Implicit diffusion along z:** Can be enabled or disabled. ⚠️ Not yet implemented.  
 
 
 ## Turbulent channel flow 
