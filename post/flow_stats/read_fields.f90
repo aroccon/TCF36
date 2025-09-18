@@ -3,10 +3,8 @@ subroutine read_and_stats(nstep)
 use commondata
 
 integer :: nstep
-character(len=40) :: namedir,namefile
+character(len=40) :: namedir, namefile
 character(len=8) :: numfile
-character(len=3) :: setnum
-logical :: check
 integer :: i,j,k,m
 
 
@@ -16,7 +14,7 @@ write(numfile,'(i8.8)') nstep
 
 allocate(u(nx,ny,nz))
 allocate(v(nx,ny,nz))
-allocate(w(nx,ny,nz))
+allocate(w(nx,ny,nz)) ! add nz+1 to account for staggered grid? the top layer is missing (all zero); interpolate at cell center? to aling with u and v?
 allocate(phi(nx,ny,nz))
 
 write(*,*) 'Reading step ',nstep,' out of ',nend,' , flow'
@@ -70,22 +68,22 @@ mean=mean/(dble(nx*ny))
 do k=1,nz
   do i=1,nx
     do j=1,ny
-      rms(k,1) = (u(i,j,k)-mean(k,1))**2
-      rms(k,2) = (v(i,j,k)-mean(k,2))**2
-      rms(k,3) = (w(i,j,k)-mean(k,3))**2
+      rms(k,1) = rms(k,1) + (u(i,j,k)-mean(k,1))**2
+      rms(k,2) = rms(k,2) + (v(i,j,k)-mean(k,2))**2
+      rms(k,3) = rms(k,3) + (w(i,j,k)-mean(k,3))**2
     enddo
   enddo
 enddo
 rms=rms/(dble(nx*ny))
-rms=sqrt(rms)
+rms=rms**0.5d0
 
 ! skw
 do k=1,nz
   do i=1,nx
     do j=1,ny
-      skw(k,1)=skw(k,1)+(u(i,k,j)-mean(k,1))**3
-      skw(k,2)=skw(k,2)+(v(i,k,j)-mean(k,2))**3
-      skw(k,3)=skw(k,3)+(w(i,k,j)-mean(k,3))**3
+      skw(k,1)=skw(k,1)+(u(i,j,k)-mean(k,1))**3
+      skw(k,2)=skw(k,2)+(v(i,j,k)-mean(k,2))**3
+      skw(k,3)=skw(k,3)+(w(i,j,k)-mean(k,3))**3
     enddo
   enddo
 enddo
@@ -96,9 +94,9 @@ skw=skw/(dble(nx*ny))
 do k=1,nz
   do i=1,nx
     do j=1,ny
-      flt(k,1)=flt(k,1)+(u(i,k,j)-mean(k,1))**4
-      flt(k,2)=flt(k,2)+(v(i,k,j)-mean(k,2))**4
-      flt(k,3)=flt(k,3)+(w(i,k,j)-mean(k,3))**4
+      flt(k,1)=flt(k,1)+(u(i,j,k)-mean(k,1))**4
+      flt(k,2)=flt(k,2)+(v(i,j,k)-mean(k,2))**4
+      flt(k,3)=flt(k,3)+(w(i,j,k)-mean(k,3))**4
     enddo
   enddo
 enddo
@@ -107,18 +105,21 @@ flt=flt/(dble(nx*ny))
 ! normalization for SKW and FLT
 do k=1,nz
   do m=1,3
-  skw(k,m)=skw(k,m)/rms(k,m)**3
-  flt(k,m)=flt(k,m)/rms(k,m)**4
+    skw(k,m)=skw(k,m)/rms(k,m)**3
+    flt(k,m)=flt(k,m)/rms(k,m)**4
+  enddo
 enddo
 
 
-namefile = trim(namedir)//'stat_'//trim(numfile)//'.dat'
+namefile = 'stat_'//trim(numfile)//'.dat'
+!write(*,*) "name", namefile
 open(66,status='replace',file=trim(namefile),form='formatted')
-write(66,'(7(a12,2x))') 'z','u mean','v mean','w mean','u rms','v rms','w rms','u skw','v skw','w skw','u flt','v flt','w flt'
-write(66,*)
+write(66,'(13(a12,2x))') '% z','u mean','v mean','w mean','u rms','v rms','w rms','u skw','v skw','w skw','u flt','v flt','w flt'
+!write(66,*)
 
 do k=1,nz
-  write(66,'(f12.5,2x,12(es12.5,2x))') z(i),mean(i,1),mean(i,2),mean(i,3),rms(i,1),rms(i,2),rms(i,3),skw(i,1),skw(i,2),skw(i,3),flt(i,1),flt(i,2),flt(i,3)
+  write(66,'(f12.5,2x,12(es12.5,2x))') z(k),mean(k,1),mean(k,2),mean(k,3),rms(k,1),rms(k,2),rms(k,3), &
+                                            skw(k,1),skw(k,2),skw(k,3),   flt(k,1),flt(k,2),flt(k,3)
 end do
 
 
