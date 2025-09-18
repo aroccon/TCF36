@@ -43,6 +43,25 @@ if (phiflag .eq. 1) then
   close(668,status='keep')
 endif
 
+
+! interpolate w at the cell center (where u and v are also located)
+! k=1 is the bottom node and k=nz is the upper most node (nz+1 is not saved to avoid differen file sizes, it's technically an halo point)
+if (uflag .eq. 1) then
+  do k=1,nz-1
+    do i=1,nx
+      do j=1,ny
+        w(i,j,k)=0.5d0*(w(i,j,k) + w(i,j,k+1))
+      enddo
+    enddo
+  enddo
+  do i=1,nx
+    do j=1,ny
+      w(i,j,nz)=0.5d0*(w(i,j,nz) + 0.d0) ! assume nz+1 is 0
+    enddo
+  enddo
+endif
+
+
 !--- compute statistics ---
 allocate(mean(nz,3),rms(nz,3),skw(nz,3),flt(nz,3))
 
