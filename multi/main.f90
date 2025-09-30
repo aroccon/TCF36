@@ -7,6 +7,7 @@ use cufft
 use mpi
 use velocity 
 use phase
+use temperature
 use param
 use mpivar
 use cudecompvar
@@ -60,6 +61,8 @@ real(kind=8), parameter :: beta(3)  = (/ 0.d0,       -17.d0/60.d0,  -5.d0/12.d0 
 
 ! Enable or disable phase field 
 #define phiflag 0
+! Enable or disable temperature field
+#define thetaflag 1
 ! Implicit diffusion along z flag (to be implemented)
 #define impdiff 0 
 
@@ -280,6 +283,11 @@ allocate(tanh_psi(piX%shape(1),piX%shape(2),piX%shape(3)))
 allocate(normx(piX%shape(1),piX%shape(2),piX%shape(3)),normy(piX%shape(1),piX%shape(2),piX%shape(3)),normz(piX%shape(1),piX%shape(2),piX%shape(3)))
 allocate(fxst(piX%shape(1),piX%shape(2),piX%shape(3)),fyst(piX%shape(1),piX%shape(2),piX%shape(3)),fzst(piX%shape(1),piX%shape(2),piX%shape(3))) ! surface tension forces
 #endif
+!Temperature variables
+#if thetaflag == 1
+allocate(theta(piX%shape(1),piX%shape(2),piX%shape(3)),rhstheta(piX%shape(1),piX%shape(2),piX%shape(3)))
+allocate(rhstheta_o(piX%shape(1),piX%shape(2),piX%shape(3)))
+#endif
 
 ! allocate arrays for transpositions and halo exchanges 
 CHECK_CUDECOMP_EXIT(cudecompMalloc(handle, grid_desc, work_d, nElemWork))
@@ -388,6 +396,36 @@ CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, phi, work_halo_d, CU
 !$acc end host_data 
 #endif
 
+! initialize temperature field
+#if thetaflag == 1
+if (restart .eq. 0) then
+if (rank.eq.0) write(*,*) 'Initialize temperature field (fresh start)'
+   if (intheta .eq. 0) then
+   if (rank.eq.0) write(*,*) 'Uniform temperature field'
+      do k = 1+halo_ext, piX%shape(3)-halo_ext
+         do j = 1+halo_ext, piX%shape(2)-halo_ext
+            do i = 1, piX%shape(1)
+               theta(i,j,k) = 0.0d0  ! uniform temperature
+            enddo
+         enddo
+      enddo
+   endif
+   if (intheta .eq. 1) then
+      if (rank.eq.0) write(*,*) "Initialize temperature from data"
+      call readfield(6)
+   endif
+endif
+if (restart .eq. 1) then
+    write(*,*) "Initialize temperature (restart, from output folder), iteration:", tstart
+    call readfield_restart(tstart,6)
+endif
+! update halo
+!$acc host_data use_device(theta)
+CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, theta, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
+CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, theta, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
+!$acc end host_data 
+#endif
+
 !Save initial fields (only if a fresh start)
 if (restart .eq. 0) then
    if (rank.eq.0) write(*,*) "Save initial fields"
@@ -397,6 +435,9 @@ if (restart .eq. 0) then
    call writefield(tstart,4)
    #if phiflag == 1
    call writefield(tstart,5)
+   #endif
+   #if thetaflag == 1
+   call writefield(tstart,6)  ! temperature
    #endif
 endif
 !########################################################################################################################################
@@ -416,7 +457,11 @@ gumax=1.d0
 tstart=tstart+1
 gamma=1.d0*gumax
 !$acc data copyin(piX)
+#if thetaflag == 1
+!$acc data create(rhsu_o, rhsv_o, rhsw_o, rhstheta_o)
+#else
 !$acc data create(rhsu_o, rhsv_o, rhsw_o)
+#endif
 !$acc data copyin(mysin, mycos)
 call cpu_time(t_start)
 ! Start temporal loop
@@ -536,11 +581,11 @@ do t=tstart,tfin
    !$acc kernels
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
-            do i=1,nx
-                phi(i,j,k) = phi(i,j,k) + dt*rhsphi(i,j,k)
-            enddo
-        enddo
-    enddo
+         do i=1,nx
+            phi(i,j,k) = phi(i,j,k) + dt*rhsphi(i,j,k)
+         enddo
+      enddo
+   enddo
    !$acc end kernels
 
    ! 4.3 Call halo exchnages along Y and Z for phi 
@@ -553,6 +598,9 @@ do t=tstart,tfin
    ! END STEP 4: PHASE-FIELD SOLVER (EXPLICIT)
    !########################################################################################################################################
    call nvtxEndRange
+
+
+
 
 
 
@@ -631,6 +679,45 @@ do t=tstart,tfin
             enddo
          enddo
       enddo
+
+      #if thetaflag == 1
+      ! Temperature solver inside RK3 loop
+      !$acc parallel loop tile(16,4,2)
+      do k=1+halo_ext, piX%shape(3)-halo_ext
+         do j=1+halo_ext, piX%shape(2)-halo_ext
+            do i=1,nx
+               ip=i+1
+               jp=j+1
+               kp=k+1
+               im=i-1
+               jm=j-1
+               km=k-1
+               if (ip .gt. nx) ip=1
+               if (im .lt. 1) im=nx
+               ! convective terms
+               rhstheta(i,j,k) = &
+                     - (u(ip,j,k)*0.5d0*(theta(ip,j,k)+theta(i,j,k)) - u(i,j,k)*0.5d0*(theta(i,j,k)+theta(im,j,k)))*dxi &
+                     - (v(i,jp,k)*0.5d0*(theta(i,jp,k)+theta(i,j,k)) - v(i,j,k)*0.5d0*(theta(i,j,k)+theta(i,jm,k)))*dyi &
+                     - (w(i,j,kp)*0.5d0*(theta(i,j,kp)+theta(i,j,k)) - w(i,j,k)*0.5d0*(theta(i,j,k)+theta(i,j,km)))*dzi
+               ! diffusive terms
+               rhstheta(i,j,k) = rhstheta(i,j,k) + kappa*( &
+                     (theta(ip,j,k)-2.d0*theta(i,j,k)+theta(im,j,k))*ddxi + &
+                     (theta(i,jp,k)-2.d0*theta(i,j,k)+theta(i,jm,k))*ddyi + &
+                     (theta(i,j,kp)-2.d0*theta(i,j,k)+theta(i,j,km))*ddzi)
+            enddo
+         enddo
+      enddo
+      ! Temperature time integration
+      !$acc parallel loop collapse(3)
+      do k=1+halo_ext, piX%shape(3)-halo_ext
+         do j=1+halo_ext, piX%shape(2)-halo_ext
+            do i=1,nx
+               theta(i,j,k) = theta(i,j,k) + dt*alpha(stage)*rhstheta(i,j,k) + dt*beta(stage)*rhstheta_o(i,j,k)
+               rhstheta_o(i,j,k)=rhstheta(i,j,k)
+            enddo
+         enddo
+      enddo
+      #endif
 
       ! Surface tension forces
       #if phiflag == 1
@@ -714,6 +801,8 @@ do t=tstart,tfin
       !!$acc end kernels
       #endif
 
+
+
       ! 5.3 update halos (y and z directions), required to then compute the RHS of Poisson equation because of staggered grid
       !$acc host_data use_device(u)
       CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, u, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
@@ -728,7 +817,21 @@ do t=tstart,tfin
       CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, w, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
       !$acc end host_data 
 
-      ! impose boundary conditions, can be optimized, no real gain
+      ! impose temperature boundary conditions
+      #if thetaflag == 1
+      !$acc parallel loop collapse(3)
+      do k=1, piX%shape(3)
+         do j=1, piX%shape(2)
+            do i=1,nx
+               kg = piX%lo(3) + k - 2
+               if (kg .eq. 1)    theta(i,j,k) = 1.d0    ! bottom wall
+               if (kg .eq. nz)   theta(i,j,k) = -1.d0   ! top wall
+            enddo
+         enddo
+      enddo
+      #endif
+
+      ! impose velocity boundary conditions, can be optimized, no real gain
       !$acc parallel loop collapse(3)
       do k=1, piX%shape(3)
          do j=1, piX%shape(2)
@@ -794,6 +897,8 @@ do t=tstart,tfin
 
       
    enddo
+
+
    !########################################################################################################################################
    ! END STEP 5: USTAR COMPUTATION 
    !########################################################################################################################################
@@ -1093,6 +1198,10 @@ do t=tstart,tfin
          ! write phase-field (5)
          call writefield(t,5)
          #endif
+         #if thetaflag == 1
+         ! write temperature field (6)
+         call writefield(t,6)
+         #endif
    endif
    !########################################################################################################################################
    ! END STEP 9: OUTPUT FIELDS N  
@@ -1113,7 +1222,12 @@ deallocate(u,v,w)
 deallocate(tanh_psi, mysin, mycos)
 deallocate(rhsu,rhsv,rhsw)
 deallocate(rhsu_o,rhsv_o,rhsw_o)
+#if phiflag == 1
 deallocate(phi,rhsphi,normx,normy,normz)
+#endif
+#if thetaflag == 1
+deallocate(theta,rhstheta,rhstheta_o)
+#endif
 
 call mpi_finalize(ierr)
 

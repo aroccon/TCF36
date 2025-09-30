@@ -1,14 +1,16 @@
-0           ! fresh start=0 restart =1
-0           ! iteration to start from (fresh start 0 otherwise different)
-100000      ! Final time step
-5000        ! Saving frequency
+1           ! fresh start=0 restart =1
+60000           ! iteration to start from (fresh start 0 otherwise different)
+300000      ! Final time step
+30000        ! Saving frequency
 0           ! inflow condition (0=Taylor green, 1=read from fields)
 0           ! phase-field initial condition (0=circular drop, 1=read from fields)
+0           ! theta initial condition (0=uniform, 1=read from fields)
 0.0003      ! dt for the simulation
 0.006       ! mu (viscosity)
 1.000       ! density
 -1.0         ! Pressure gradient along x (negative if flow along x) 
 0.0         ! Pressure gradient along y (negative if flow along y) 
+0.006       ! kappa (thermal diffusivity)
 0.5         ! Initial drop radius for phase-field
 0.1d0       ! Surface tension
 1.0         ! Ratio eps/dx

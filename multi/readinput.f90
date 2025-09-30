@@ -4,6 +4,7 @@
 subroutine readinput
 use velocity
 use phase
+use temperature
 use param
 use mpivar
 implicit none
@@ -17,12 +18,15 @@ read(55,*) dump
 !Flow parameters
 read(55,*) inflow
 read(55,*) inphi
+read(55,*) intheta
 read(55,*) dt
 read(55,*) mu
 read(55,*) rho
 ! forcing parameters
 read(55,*) gradpx
 read(55,*) gradpy
+! temperature parameters
+read(55,*) kappa
 ! phase-field parameters
 read(55,*) radius
 read(55,*) sigma
@@ -71,6 +75,7 @@ if (rank .eq. 0) then
     write(*,*) "Rho     ", rho
     write(*,*) "Gradpx  ", gradpx
     write(*,*) "Gradpy  ", gradpy
+    write(*,*) "Kappa   ", kappa
     write(*,*) "Radius  ", radius
     write(*,*) "Sigma   ", sigma
     write(*,*) "Eps     ", eps

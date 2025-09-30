@@ -3,6 +3,7 @@ subroutine writefield(t,fieldn)
 
 use velocity
 use phase
+use temperature
 use mpi
 use mpivar
 use param
@@ -91,6 +92,17 @@ if (fieldn .eq. 5) then
   call mpi_file_close(f_handle,ierr)
 endif
 
+if (fieldn .eq. 6) then
+  out=theta(1:nx,1+halo_ext:piX%shape(2)-halo_ext,1+halo_ext:piX%shape(3)-halo_ext) !<- out only the inner parts (no halo)
+  write(namefile,'(a,i8.8,a)') './output/theta_',t,'.dat'
+  call mpi_file_open(MPI_COMM_WORLD,namefile,mpi_mode_create+mpi_mode_rdwr,mpi_info_null,f_handle,ierr)
+  call mpi_type_create_subarray(3,g_size,p_size,fstart,mpi_order_fortran,mpi_double_precision,ftype,ierr)
+  call mpi_type_commit(ftype,ierr)
+  call mpi_file_set_view(f_handle,offset,mpi_double_precision,ftype,'native',mpi_info_null,ierr)
+  call mpi_file_write_all(f_handle,out,p_size(1)*p_size(2)*p_size(3),mpi_double_precision,mpi_status_ignore,ierr)
+  call mpi_file_close(f_handle,ierr)
+endif
+
 deallocate(out)
 
 end subroutine
@@ -109,6 +121,7 @@ subroutine readfield(fieldn)
 
 use velocity
 use phase
+use temperature
 use mpi
 use mpivar
 use param
@@ -202,6 +215,18 @@ if (fieldn .eq. 5) then
   phi(1:nx,1+halo_ext:piX%shape(2)-halo_ext,1+halo_ext:piX%shape(3)-halo_ext)=in !<- read only the inner parts (no halo) u has halos; in no halos
 endif
 
+if (fieldn .eq. 6) then
+  namefile='./input/theta.dat'
+  call mpi_file_open(MPI_COMM_WORLD,namefile,mpi_mode_rdonly,mpi_info_null,f_handle,ierr)
+  call mpi_type_create_subarray(3,g_size,p_size,fstart,mpi_order_fortran,mpi_double_precision,ftype,ierr)
+  call mpi_type_commit(ftype,ierr)
+  call mpi_file_set_view(f_handle,offset,mpi_double_precision,ftype,'native',mpi_info_null,ierr)
+  !call mpi_file_read_all(f_handle,in,p_size(1)*p_size(2)*p_size(3),mpi_double_precision,mpi_status_ignore,ierr)
+  call mpi_file_read(f_handle,in,p_size(1)*p_size(2)*p_size(3),mpi_double_precision,mpi_status_ignore,ierr)
+  call mpi_file_close(f_handle,ierr)
+  theta(1:nx,1+halo_ext:piX%shape(2)-halo_ext,1+halo_ext:piX%shape(3)-halo_ext)=in !<- read only the inner parts (no halo) u has halos; in no halos
+endif
+
 deallocate(in)
 
 end subroutine
@@ -220,6 +245,7 @@ subroutine readfield_restart(t,fieldn)
 
 use velocity
 use phase
+use temperature
 use mpi
 use mpivar
 use param
@@ -311,6 +337,18 @@ if (fieldn .eq. 5) then
   call mpi_file_read(f_handle,in,p_size(1)*p_size(2)*p_size(3),mpi_double_precision,mpi_status_ignore,ierr)
   call mpi_file_close(f_handle,ierr)
   phi(1:nx,1+halo_ext:piX%shape(2)-halo_ext,1+halo_ext:piX%shape(3)-halo_ext)=in !<- read only the inner parts (no halo) u has halos; in no halos
+endif
+
+if (fieldn .eq. 6) then
+  write(namefile,'(a,i8.8,a)') './output/theta_',t,'.dat'
+  call mpi_file_open(MPI_COMM_WORLD,namefile,mpi_mode_rdonly,mpi_info_null,f_handle,ierr)
+  call mpi_type_create_subarray(3,g_size,p_size,fstart,mpi_order_fortran,mpi_double_precision,ftype,ierr)
+  call mpi_type_commit(ftype,ierr)
+  call mpi_file_set_view(f_handle,offset,mpi_double_precision,ftype,'native',mpi_info_null,ierr)
+  !call mpi_file_read_all(f_handle,in,p_size(1)*p_size(2)*p_size(3),mpi_double_precision,mpi_status_ignore,ierr)
+  call mpi_file_read(f_handle,in,p_size(1)*p_size(2)*p_size(3),mpi_double_precision,mpi_status_ignore,ierr)
+  call mpi_file_close(f_handle,ierr)
+  theta(1:nx,1+halo_ext:piX%shape(2)-halo_ext,1+halo_ext:piX%shape(3)-halo_ext)=in !<- read only the inner parts (no halo) u has halos; in no halos
 endif
 
 deallocate(in)

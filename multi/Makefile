@@ -4,15 +4,15 @@ LD	= $(FC)
 RM	= /bin/rm -f
 
 # Paths (Modify if necessary)
-CUDECOMP_DIR = /home/milton/MHIT36_cuDecomp/cuDecomp-main/build/
+CUDECOMP_DIR = /home/milton/TCF36/cuDecomp/build/
 
 # Compiler and Linker Flags
 FFLAGS = -fast -acc -gpu=managed -Minfo=accel -Mfree -Mpreprocess -cpp -Minfo=accel -cuda  -I$(CUDECOMP_DIR)/include
-LIBS = -L$(CUDECOMP_DIR)/lib -L/usr/local/cuda/lib64 -lcudecomp_fort -lcudecomp -cudalib=cufft -lcuda
+LIBS = -L$(CUDECOMP_DIR)/lib -L/usr/local/cuda/lib64 -lcudecomp_fort -lcudecomp -cudalib=cufft -lnvToolsExt
 
 # Source and Object Files
-OBJS = module.f90 main.f90 readinput.f90
-EXEC = mhit36
+OBJS = module.f90 main.f90 readinput.f90 readwrite.f90
+EXEC = tcf36
 
 $(EXEC):	$(OBJS)
 	$(LD) $(FFLAGS) $(OBJS) $(LIBS) -o $@

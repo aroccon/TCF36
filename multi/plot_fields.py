@@ -29,17 +29,13 @@ import matplotlib.style as style
 import os
 import glob
 
-from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy.interpolate import griddata
 
-
-from jupyterthemes import jtplot
 
 from matplotlib.widgets import Cursor
 
 import h5py
 
-jtplot.style(theme='monokai', context='notebook', ticks=True, grid=False)
 plt.style.use("dark_background")
 # mpl_style(dark=True)
 
@@ -50,16 +46,16 @@ foldername = './output/'
 # PARAMETERS:
 
 # fields to plot
-fields = ['u']
+fields = ['theta']
 
 # number of points in each direction
 # Grid parameters (user-defined)
-nx = 512  # number of points in x
-ny = 256  # number of points in y
-nz = 64  # number of points in z
+nx = 256  # number of points in x
+ny = 128  # number of points in y
+nz = 200  # number of points in z
 
-Lx = 16.0  # length of domain in x
-Ly = 8.0      # length of domain in y
+Lx = 6.0  # length of domain in x
+Ly = 3.0      # length of domain in y
 Lz = 2.0      # length of domain in z
 
 # compute the derivative of the fields (show them instead of the neormal fields)
@@ -77,14 +73,15 @@ derivative_vec = [0]
 slice_dir = 2
 
 # index to take the slice (from 1 to nx_i, choose -1 for computing the average)
-slice_idx = 32
+slice_idx = 0
 
 # slice_idx = 222
 
 # time_steps to plot 
 # ts_vec = [0]
-ts_vec = range(800000,840500,10000)
-ts_vec = range(0,900001,100000)
+# ts_vec = range(800000,840500,10000)
+# ts_vec = range(0,900001,100000)
+ts_vec = [60000]  # Test with just one timestep
 
 # ts_vec = [10000]
 
@@ -98,10 +95,10 @@ fluct = 0
 fontsize_val = 10
 
 # show heatmaps
-showmaps_flag = 0
+showmaps_flag = 1
 
 # slice of slice (leave -1 to compute the mean)
-meanprof_slice = -1
+meanprof_slice = 0
 
 # value of the figure size
 figsize_val = 8
@@ -223,13 +220,23 @@ for n_step in ts_vec:
     id_fnames = -1
     for fld in fields:
         file_name = f"{fld}_{n_step:08d}.dat"
+        file_path = foldername + file_name
         id_fnames = id_fnames+1
-        with open(foldername + file_name, 'rb') as file:
+        
+        # Check if file exists
+        if not os.path.exists(file_path):
+            print(f"Warning: File {file_path} not found, skipping...")
+            continue
+            
+        with open(file_path, 'rb') as file:
             total_elements = np.prod(nvec)
             data = np.memmap(file, dtype=np.float64, mode='r', shape=(total_elements,))
             data = data.reshape(np.flip(nvec))*1.0
 
             data = data.transpose((2, 1, 0)) # Permute first and third index to match the convection [x,z,y]
+            
+            # Validate data
+            print(f"Loaded {file_name}: shape={data.shape}, min={data.min():.6f}, max={data.max():.6f}, mean={data.mean():.6f}")
 
             dersuff = ''
             if derivative_vec[0] != 0:
@@ -336,8 +343,7 @@ for n_step in ts_vec:
 
                 # create an axes on the right side of ax. The width of cax will be 5%
                 # of ax and the padding between cax and ax will be fixed at 0.05 inch.
-                divider = make_axes_locatable(ax)
-                cax = divider.append_axes("top", size="5%", pad=0.05)
+                cax = plt.axes([0.15, 0.95, 0.7, 0.03])
                 plt.colorbar(im, cax=cax,orientation = "horizontal")
                 cax.xaxis.set_ticks_position('top')
                 plt.xticks(fontsize=fontsize_val, rotation=0)
@@ -542,7 +548,8 @@ for i in range(numfields):
         plt.subplot(2, 1, 1)
         plt.plot(freq, amp,label=fields[i]+'_'+str(ts_vec[j]), alpha=0.7)
         plt.xscale('log')
-        plt.yscale('log')
+        if np.any(amp > 0):  # Only use log scale if there are positive values
+            plt.yscale('log')
         plt.title('Amplitude')
         plt.xlabel('k_'+ver_name)
         plt.ylabel('Amplitude')

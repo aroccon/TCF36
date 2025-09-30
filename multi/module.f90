@@ -9,11 +9,12 @@ module param
     integer :: restart,tstart,tfin,dump
     double precision :: gamma, normod, factor
     double precision :: dt,mu,rho !flow parameters
-    integer :: inflow, inphi
+    integer :: inflow, inphi, intheta
     double precision :: radius, sigma, epsr, eps, pos, val, epsi, enum ! phase-field parameters
     double precision :: times,timef
     double precision :: gradpx, gradpy, noise, lflow, gflow, ubulk, cflx, cfly, cflz
     double precision :: amp, mx, my, mz ! for perturbed flow
+    double precision :: kappa ! temperature parameters: thermal diffusivity, Prandtl number
 end module param
 
 
@@ -64,6 +65,12 @@ module phase
    double precision :: chempot, curv
    double precision, allocatable :: fxst(:,:,:), fyst(:,:,:), fzst(:,:,:)
 end module phase
+
+
+module temperature
+   double precision, allocatable :: theta(:,:,:), rhstheta(:,:,:)
+   double precision, allocatable :: rhstheta_o(:,:,:)
+end module temperature
 
 
 ! added NVTX for profiing from maxcuda/NVTX_example

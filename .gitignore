@@ -1,0 +1,7 @@
+multi/output
+multi/*.mod
+multi/*.o
+*.mod
+*.o
+*.out
+multi/tcf36
