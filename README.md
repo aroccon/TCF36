@@ -2,11 +2,11 @@
 
 Extended version of MHIT36 for turbulent channel flow.
 Finite-difference code based on the fractional step method.
-Solution of Navier-Stokes equations + phase-field method (ACDI).
+Solution of Navier-Stokes equations + phase-field method (ACDI) + energy equation (passive scalar).
 
 Time integration, two options:
-- All the terms explicit using RK3 (for both NS + PFM, working)
-- CN for z-diffusive terms and RK3 for the rest of the terms (to be implemented, only skeleton is present), PFM is explicit.
+- Fully explicit: Euler explicit for ACDI + RK3 for Navier-Stokes and temperature
+- Implicit CN for z-diffusive terms of Navier-Stokes equations and RK3 for the rest of the NS terms, RK3 for temperature and Euler explicit for ACDI. This latter option is not fully implemented, only the skeleton and the TDMA are present.
 
 
 If you use this code, please cite the following work: 
