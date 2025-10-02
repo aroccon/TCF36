@@ -22,39 +22,36 @@ integer :: comm_backend
 integer :: pr, pc
 ! cudecomp
 ! cuFFT
-integer :: planXf, planXb
-integer :: planY, planZ
+integer :: planXf, planXb, planY
 integer :: batchsize
 integer :: status
 ! other variables (wavenumber, grid location)
-real(8), allocatable :: x(:), y(:), z(:), kx(:), ky(:)
+double precision, allocatable :: x(:), y(:), z(:), kx(:), ky(:)
 integer :: i,j,k,il,jl,kl,ig,jg,kg,t,stage
 integer :: im,ip,jm,jp,km,kp,last,idx
 ! TDMA variables
 double precision, allocatable :: a(:), b(:), c(:)
 double complex, allocatable :: d(:), sol(:)
-real(8), device, allocatable :: kx_d(:), ky_d(:)
+double precision, device, allocatable :: kx_d(:), ky_d(:)
 ! working arrays
-complex(8), allocatable :: psi(:)
-real(8), allocatable :: ua(:,:,:)
-real(8), allocatable :: uaa(:,:,:)
-! real(8), allocatable :: psi_real(:)
-! real(8), device, allocatable :: psi_real_d(:)
-complex(8), device, allocatable :: psi_d(:)
-real(8), device, allocatable :: vel_d(:) ! only used for implicit diffusion in z
-complex(8), pointer, device, contiguous :: work_d(:), work_halo_d(:), work_d_d2z(:), work_halo_d_d2z(:)
+double complex, allocatable :: psi(:)
+double precision, allocatable :: ua(:,:,:)
+double precision, allocatable :: uaa(:,:,:)
+double complex, device, allocatable :: psi_d(:)
+double precision, device, allocatable :: vel_d(:) ! only used for implicit diffusion in z
+double complex, pointer, device, contiguous :: work_d(:), work_halo_d(:), work_d_d2z(:), work_halo_d_d2z(:)
 character(len=40) :: namefile
 character(len=4) :: itcount
 ! Code variables
-real(8)::err,maxErr,zwall,meanp,gmeanp
-complex(8), device, pointer :: psi3d(:,:,:)
-real(8) :: k2
+double precision ::err,maxErr,zwall,meanp,gmeanp
+double complex, device, pointer :: psi3d(:,:,:)
+double precision :: k2
 !integer :: il, jl, ig, jg
 integer :: offsets(3), xoff, yoff
 integer :: np(3)
 ! Alan Williamson classic
-real(kind=8), parameter :: alpha(3) = (/ 8.d0/15.d0,   5.d0/12.d0,   3.d0/4.d0 /)
-real(kind=8), parameter :: beta(3)  = (/ 0.d0,       -17.d0/60.d0,  -5.d0/12.d0 /)
+double precision, parameter :: alpha(3) = (/ 8.d0/15.d0,   5.d0/12.d0,   3.d0/4.d0 /)
+double precision, parameter :: beta(3)  = (/ 0.d0,       -17.d0/60.d0,  -5.d0/12.d0 /)
 ! Stage coefficients for diffusion-optimized SSP RK3
 !real(kind=8), parameter :: alpha(3) = (/ 0.444370493651235d0, 0.555629506348765d0, 1.0d0 /)
 !real(kind=8), parameter :: beta(3)   = (/ 0.0d0, -0.122243120495896d0, -0.377756879504104d0 /)
@@ -63,7 +60,7 @@ real(kind=8), parameter :: beta(3)  = (/ 0.d0,       -17.d0/60.d0,  -5.d0/12.d0 
 #define phiflag 0
 ! Enable or disable temperature field
 #define thetaflag 1
-! Implicit diffusion along z flag (to be implemented)
+! Implicit diffusion along z flag (to be implemented, only skeleton is present)
 #define impdiff 0 
 
 !########################################################################################################################################
