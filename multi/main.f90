@@ -330,6 +330,10 @@ if (rank.eq.0) write(*,*) "Initialize velocity field (fresh start)"
                u(i,j,k) =  u(i,j,k) + amp*sin(twopi*mx*x(i)/lx)*(-twopi*my/ly)*sin(2.d0*twopi*my*y(jg)/ly)*sin(twopi*z(kg)/lz)*sin(twopi*z(kg)/lz)
                v(i,j,k) = -amp*cos(twopi*my*y(jg)/ly)*(twopi*mx/lx)*cos(twopi*mx*x(i)/lx)*sin(twopi*z(kg)/lz)*sin(twopi*z(kg)/lz)
                w(i,j,k) =  amp*cos(twopi*mx*x(i)/lx)*(twopi*mx/lx)*sin(twopi*my*y(jg)/ly)*sin(twopi*z(kg)/lz)*sin(twopi*z(kg)/lz)
+
+               ! u(i,j,k) =  0.0d0
+               ! v(i,j,k) =  0.0d0 
+               ! w(i,j,k) =  0.0d0 
             enddo
          enddo
       enddo
@@ -707,6 +711,7 @@ do t=tstart,tfin
             enddo
          enddo
       enddo
+
       ! Temperature time integration
       !$acc parallel loop collapse(3)
       do k=1+halo_ext, piX%shape(3)-halo_ext
@@ -717,6 +722,12 @@ do t=tstart,tfin
             enddo
          enddo
       enddo
+
+      ! 5.3 update halos (y and z directions), required to then compute the RHS of Poisson equation because of staggered grid
+      !$acc host_data use_device(theta)
+      CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, theta, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
+      CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, theta, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
+      !$acc end host_data 
       #endif
 
       ! Surface tension forces

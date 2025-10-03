@@ -15,6 +15,10 @@ read(55,*) restart
 read(55,*) tstart
 read(55,*) tfin
 read(55,*) dump
+! Domain size
+read(55,*) lx
+read(55,*) ly
+read(55,*) lz
 !Flow parameters
 read(55,*) inflow
 read(55,*) inphi
@@ -36,9 +40,9 @@ read(55,*) epsr
 ! compute pre-defined constant 
 twopi=8.0_8*atan(1.0_8)
 pi=twopi/2.d0
-lx=6.d0!*twopi
-ly=3.d0!twopi
-lz=2.d0
+! lx=6.d0!*twopi
+! ly=3.d0!twopi
+! lz=2.d0
 dx = lx/nx
 dy = ly/ny
 dz = lz/(nz-1) ! fix to match laminar solution
