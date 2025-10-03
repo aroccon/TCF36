@@ -22,39 +22,36 @@ integer :: comm_backend
 integer :: pr, pc
 ! cudecomp
 ! cuFFT
-integer :: planXf, planXb
-integer :: planY, planZ
+integer :: planXf, planXb, planY
 integer :: batchsize
 integer :: status
 ! other variables (wavenumber, grid location)
-real(8), allocatable :: x(:), y(:), z(:), kx(:), ky(:)
+double precision, allocatable :: x(:), y(:), z(:), kx(:), ky(:)
 integer :: i,j,k,il,jl,kl,ig,jg,kg,t,stage
 integer :: im,ip,jm,jp,km,kp,last,idx
 ! TDMA variables
 double precision, allocatable :: a(:), b(:), c(:)
 double complex, allocatable :: d(:), sol(:)
-real(8), device, allocatable :: kx_d(:), ky_d(:)
+double precision, device, allocatable :: kx_d(:), ky_d(:)
 ! working arrays
-complex(8), allocatable :: psi(:)
-real(8), allocatable :: ua(:,:,:)
-real(8), allocatable :: uaa(:,:,:)
-! real(8), allocatable :: psi_real(:)
-! real(8), device, allocatable :: psi_real_d(:)
-complex(8), device, allocatable :: psi_d(:)
-real(8), device, allocatable :: vel_d(:) ! only used for implicit diffusion in z
-complex(8), pointer, device, contiguous :: work_d(:), work_halo_d(:), work_d_d2z(:), work_halo_d_d2z(:)
+double complex, allocatable :: psi(:)
+double precision, allocatable :: ua(:,:,:)
+double precision, allocatable :: uaa(:,:,:)
+double complex, device, allocatable :: psi_d(:)
+double precision, device, allocatable :: vel_d(:) ! only used for implicit diffusion in z
+double complex, pointer, device, contiguous :: work_d(:), work_halo_d(:), work_d_d2z(:), work_halo_d_d2z(:)
 character(len=40) :: namefile
 character(len=4) :: itcount
 ! Code variables
-real(8)::err,maxErr,zwall,meanp,gmeanp
-complex(8), device, pointer :: psi3d(:,:,:)
-real(8) :: k2
+double precision ::err,maxErr,zwall,meanp,gmeanp
+double complex, device, pointer :: psi3d(:,:,:)
+double precision :: k2
 !integer :: il, jl, ig, jg
 integer :: offsets(3), xoff, yoff
 integer :: np(3)
 ! Alan Williamson classic
-real(kind=8), parameter :: alpha(3) = (/ 8.d0/15.d0,   5.d0/12.d0,   3.d0/4.d0 /)
-real(kind=8), parameter :: beta(3)  = (/ 0.d0,       -17.d0/60.d0,  -5.d0/12.d0 /)
+double precision, parameter :: alpha(3) = (/ 8.d0/15.d0,   5.d0/12.d0,   3.d0/4.d0 /)
+double precision, parameter :: beta(3)  = (/ 0.d0,       -17.d0/60.d0,  -5.d0/12.d0 /)
 ! Stage coefficients for diffusion-optimized SSP RK3
 !real(kind=8), parameter :: alpha(3) = (/ 0.444370493651235d0, 0.555629506348765d0, 1.0d0 /)
 !real(kind=8), parameter :: beta(3)   = (/ 0.0d0, -0.122243120495896d0, -0.377756879504104d0 /)
@@ -63,7 +60,7 @@ real(kind=8), parameter :: beta(3)  = (/ 0.d0,       -17.d0/60.d0,  -5.d0/12.d0 
 #define phiflag 0
 ! Enable or disable temperature field
 #define thetaflag 1
-! Implicit diffusion along z flag (to be implemented)
+! Implicit diffusion along z flag (to be implemented, only skeleton is present)
 #define impdiff 0 
 
 !########################################################################################################################################
@@ -188,9 +185,6 @@ CHECK_CUDECOMP_EXIT(cudecompGetTransposeWorkspaceSize(handle, grid_descD2Z, nEle
 CHECK_CUDECOMP_EXIT(cudecompGetHaloWorkspaceSize(handle, grid_descD2Z, 1, halo, nElemWork_halo_d2z))
 
 
-!write(*,*) "piZ_d2z_lo", piZ_d2z%lo
-
-
 
 
 ! CUFFT initialization -- Create Plans
@@ -209,7 +203,6 @@ batchSize = piY_d2z%shape(2)*piY_d2z%shape(3)
 status = cufftPlan1D(planY, ny, CUFFT_Z2Z, batchSize)
 if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating Y plan Forward & Backward'
 
-! Z-plan removed (not neeeded)
 
 ! define grid
 allocate(x(nx),y(ny),z(nz),kx(nx),ky(ny))
@@ -307,10 +300,10 @@ CHECK_CUDECOMP_EXIT(cudecompMalloc(handle, grid_descD2Z, work_halo_d_d2z, nElemW
 
 
 !########################################################################################################################################
-! START STEP 3: FLOW AND PHASE FIELD INIT
+! START STEP 3: FLOW FIELD, PHASE-FIELD AND TEMPERATURE INIT
 !########################################################################################################################################
 ! 3.1 Read/initialize from data without halo grid points (avoid out-of-bound if reading usin MPI I/O)
-! 3.2 Call halo exchnages along Y and Z for u,v,w and phi
+! 3.2 Call halo exchnages along Y and Z for u, v, w, phi and theta
 if (restart .eq. 0) then !fresh start Taylor Green or read from file in init folder
 if (rank.eq.0) write(*,*) "Initialize velocity field (fresh start)"
    if (inflow .eq. 0) then
@@ -445,7 +438,7 @@ if (restart .eq. 0) then
    #endif
 endif
 !########################################################################################################################################
-! END STEP 3: FLOW AND PHASE FIELD INIT
+! END STEP 3: FLOW FIELD, PHASE-FIELD AND TEMP INIT FIELD INIT
 !########################################################################################################################################
 
 
@@ -980,10 +973,7 @@ do t=tstart,tfin
    yoff = offsets(2)
    npx = np(1)
    npy = np(2)
-   !write(*,*) "xoff, yoff", xoff, yoff
-
    call nvtxStartRange("Solution")
-
    !$acc parallel loop collapse(2) gang private(a,b,c,d,factor) 
    do jl = 1, npy
       do il = 1, npx
@@ -1001,20 +991,16 @@ do t=tstart,tfin
             c(k) =  1.0d0*dzi*dzi
             d(k) =  psi3d(k,il,jl)
          enddo
-
          ! Neumann BC at bottom
          a(0) =  0.0d0
          b(0) = -1.0d0*dzi*dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
          c(0) =  1.0d0*dzi*dzi
          d(0) =  0.0d0
-
-         ! ghost node elimintaion trick
          ! Neumann BC at top
          a(nz+1) =  1.0d0*dzi*dzi
          b(nz+1) = -1.0d0*dzi*dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
          c(nz+1) =  0.0d0
          d(nz+1) =  0.0d0
-
          ! Enforce pressure at one point? one interior point, avodig messing up with BC
          ! need brackets?
          if (ig == 1 .and. jg == 1) then
@@ -1023,7 +1009,6 @@ do t=tstart,tfin
             c(1) = 0.d0
             d(1) = 0.d0
          end if
-
          ! Forward elimination (Thomas)
          !$acc loop seq
          do k = 1, nz+1
@@ -1031,7 +1016,6 @@ do t=tstart,tfin
             b(k) = b(k) - factor*c(k-1)
             d(k) = d(k) - factor*d(k-1)
          end do
-
          ! Back substitution
          psi3d(nz+1,il,jl) = d(nz+1)/b(nz+1)
          ! check on pivot like flutas?
@@ -1039,11 +1023,6 @@ do t=tstart,tfin
          do k = nz, 1, -1
             psi3d(k,il,jl) = (d(k) - c(k)*psi3d(k+1,il,jl))/b(k)
          end do
-
-         ! Store solution in array that do the back FFT
-         !do k=1,nz
-         !   psi3d(k,il,jl) = sol(k)
-         !enddo 
       end do
    end do
 
