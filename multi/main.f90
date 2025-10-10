@@ -59,7 +59,7 @@ double precision, parameter :: beta(3)  = (/ 0.d0,       -17.d0/60.d0,  -5.d0/12
 ! Enable or disable phase field 
 #define phiflag 0
 ! Enable or disable temperature field
-#define thetaflag 1
+#define thetaflag 0
 ! Implicit diffusion along z flag (to be implemented, only skeleton is present)
 #define impdiff 0 
 
@@ -829,8 +829,8 @@ do t=tstart,tfin
          do j=1, piX%shape(2)
             do i=1,nx
                kg = piX%lo(3) + k - 2                   
-               if (kg .eq. 1)    theta(i,j,kg-1) =  2.d0*( 1.d0) - theta(i,j,kg)     ! mean value between kg and kg-1 (wall) equal to 1 
-               if (kg .eq. nz)   theta(i,j,kg+1) =  2.d0*(-1.d0) - theta(i,j,kg)     ! mean value between kg and kg+1 (wall) equal to 1 
+               if (kg .eq. 1)    theta(i,j,k-1) =  2.d0*( 1.d0) - theta(i,j,k)     ! mean value between kg and kg-1 (wall) equal to 1 
+               if (kg .eq. nz)   theta(i,j,k+1) =  2.d0*(-1.d0) - theta(i,j,k)     ! mean value between kg and kg+1 (wall) equal to 1 
             enddo
          enddo
       enddo
@@ -843,14 +843,14 @@ do t=tstart,tfin
       do k=1, piX%shape(3)
          do j=1, piX%shape(2)
             do i=1,nx
-               kg = piX%lo(3)  + k -2
+               kg = piX%lo(3)  + k - 2
                ! bottom wall 
-               if (kg .eq. 1)    u(i,j,kg-1)=  -u(i,j,kg)  !  mean value between kg and kg-1 (wall) equal to zero  
-               if (kg .eq. 1)    v(i,j,kg-1)=  -v(i,j,kg)  !  mean value between kg and kg-1 (wall) equal to zero  
+               if (kg .eq. 1)    u(i,j,k-1)=  -u(i,j,k)  !  mean value between kg and kg-1 (wall) equal to zero  
+               if (kg .eq. 1)    v(i,j,k-1)=  -v(i,j,k)  !  mean value between kg and kg-1 (wall) equal to zero  
                if (kg .eq. 1)    w(i,j,k)=0.d0             ! w point is at the wall
                ! top wall
-               if (kg .eq. nz)   u(i,j,kg+1)=  -u(i,j,kg)  !  mean value between kg and kg+1 (wall) equal to zero 
-               if (kg .eq. nz)   v(i,j,kg+1)=  -v(i,j,kg)  !  mean value between kg and kg+1 (wall) equal to zero 
+               if (kg .eq. nz)   u(i,j,k+1)=  -u(i,j,k)  !  mean value between kg and kg+1 (wall) equal to zero 
+               if (kg .eq. nz)   v(i,j,k+1)=  -v(i,j,k)  !  mean value between kg and kg+1 (wall) equal to zero 
                if (kg .eq. nz+1) w(i,j,k)=0.d0             ! w point (nz+1) is at the wall
             enddo
          enddo
@@ -1123,14 +1123,14 @@ do t=tstart,tfin
    do k=1, piX%shape(3)
       do j=1, piX%shape(2)
          do i=1,nx
-            kg = piX%lo(3)  + k -2
+            kg = piX%lo(3) + k - 2
             ! bottom wall 
-            if (kg .eq. 1)    u(i,j,kg-1)=  -u(i,j,kg)  !  mean value between kg and kg-1 (wall) equal to zero  
-            if (kg .eq. 1)    v(i,j,kg-1)=  -v(i,j,kg)  !  mean value between kg and kg-1 (wall) equal to zero  
-            if (kg .eq. 1)    w(i,j,k)=0.d0             !  w point is at the wall
+            if (kg .eq. 1)    u(i,j,k-1) =  -u(i,j,k)  !  mean value between kg and kg-1 (wall) equal to zero  
+            if (kg .eq. 1)    v(i,j,k-1) =  -v(i,j,k)  !  mean value between kg and kg-1 (wall) equal to zero  
+            if (kg .eq. 1)    w(i,j,k)    =   0.d0       !  w point is at the wall
             ! top wall
-            if (kg .eq. nz)   u(i,j,kg+1)=  -u(i,j,kg)  !  mean value between kg and kg+1 (wall) equal to zero 
-            if (kg .eq. nz)   v(i,j,kg+1)=  -v(i,j,kg)  !  mean value between kg and kg+1 (wall) equal to zero 
+            if (kg .eq. nz)   u(i,j,k+1)=  -u(i,j,k)  !  mean value between kg and kg+1 (wall) equal to zero 
+            if (kg .eq. nz)   v(i,j,k+1)=  -v(i,j,k)  !  mean value between kg and kg+1 (wall) equal to zero 
             if (kg .eq. nz+1) w(i,j,k)=0.d0             !  w point (nz+1) is at the wall
             umax=max(umax,u(i,j,k))
             vmax=max(vmax,v(i,j,k))
