@@ -1,14 +1,10 @@
 0           ! fresh start=0 restart =1
-0       ! iteration to start from (fresh start 0 otherwise different)
-500000      ! Final time step
-10000       ! Saving frequency
-0.006         ! Streamwise domain lenght Lx
-0.003         ! Spanwise domain width Ly
-2.0         ! Wall-normal domain height Lz=2h
-0           ! fresh start=0 restart =1
 0           ! iteration to start from (fresh start 0 otherwise different)
-300000      ! Final time step
-10000        ! Saving frequency
+500000      ! Final time step
+1000        ! Saving frequency
+6.28        ! Streamwise domain lenght Lx
+3.14        ! Spanwise domain width Ly
+2.0         ! Wall-normal domain height Lz=2h
 0           ! inflow condition (0=Taylor green, 1=read from fields)
 0           ! phase-field initial condition (0=circular drop, 1=read from fields)
 0           ! theta initial condition (0=uniform, 1=read from fields)
