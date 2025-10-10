@@ -822,31 +822,36 @@ do t=tstart,tfin
       !$acc end host_data 
 
       ! impose temperature boundary conditions
+      ! interpolated as done for the velocity (see node sketch)
       #if thetaflag == 1
       !$acc parallel loop collapse(3)
       do k=1, piX%shape(3)
          do j=1, piX%shape(2)
             do i=1,nx
-               kg = piX%lo(3) + k - 2
-               if (kg .eq. 1)    theta(i,j,k) = 1.d0    ! bottom wall
-               if (kg .eq. nz)   theta(i,j,k) = -1.d0   ! top wall
+               kg = piX%lo(3) + k - 2                   
+               if (kg .eq. 1)    theta(i,j,kg-1) =  2.d0*( 1.d0) - theta(i,j,kg)     ! mean value between kg and kg-1 (wall) equal to 1 
+               if (kg .eq. nz)   theta(i,j,kg+1) =  2.d0*(-1.d0) - theta(i,j,kg)     ! mean value between kg and kg+1 (wall) equal to 1 
             enddo
          enddo
       enddo
       #endif
 
       ! impose velocity boundary conditions, can be optimized, no real gain
+      ! w is at the wall, u and v interpolate so that the mean value is zero
+      ! no-slip assumted, i.e. u=0, can be extented to any value
       !$acc parallel loop collapse(3)
       do k=1, piX%shape(3)
          do j=1, piX%shape(2)
             do i=1,nx
                kg = piX%lo(3)  + k -2
-               if (kg .eq. 1)    u(i,j,k)=0.d0       ! bottom wall
-               if (kg .eq. 1)    v(i,j,k)=0.d0       ! bottom wall
-               if (kg .eq. 1)    w(i,j,k)=0.d0       ! bottom wall
-               if (kg .eq. nz)   u(i,j,k)=0.d0       ! top wall
-               if (kg .eq. nz)   v(i,j,k)=0.d0       ! top wall
-               if (kg .eq. nz+1) w(i,j,k)=0.d0       ! top wall
+               ! bottom wall 
+               if (kg .eq. 1)    u(i,j,kg-1)=  -u(i,j,kg)  !  mean value between kg and kg-1 (wall) equal to zero  
+               if (kg .eq. 1)    v(i,j,kg-1)=  -v(i,j,kg)  !  mean value between kg and kg-1 (wall) equal to zero  
+               if (kg .eq. 1)    w(i,j,k)=0.d0             ! w point is at the wall
+               ! top wall
+               if (kg .eq. nz)   u(i,j,kg+1)=  -u(i,j,kg)  !  mean value between kg and kg+1 (wall) equal to zero 
+               if (kg .eq. nz)   v(i,j,kg+1)=  -v(i,j,kg)  !  mean value between kg and kg+1 (wall) equal to zero 
+               if (kg .eq. nz+1) w(i,j,k)=0.d0             ! w point (nz+1) is at the wall
             enddo
          enddo
       enddo
@@ -1108,8 +1113,9 @@ do t=tstart,tfin
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, w, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
 
-   ! impose boundary conditions, can be optimized, no real gain
-   ! Also find the maximum velocity for CFL
+   ! impose velocity boundary conditions, can be optimized, no real gain
+   ! w is at the wall, u and v interpolate so that the mean value is zero
+   ! no-slip assumted, i.e. u=0, can be extented to any value
    umax=0.d0
    vmax=0.d0
    wmax=0.d0
@@ -1118,18 +1124,21 @@ do t=tstart,tfin
       do j=1, piX%shape(2)
          do i=1,nx
             kg = piX%lo(3)  + k -2
-            if (kg .eq. 1)    u(i,j,k)=0.d0       ! bottom wall
-            if (kg .eq. 1)    v(i,j,k)=0.d0       ! bottom wall
-            if (kg .eq. 1)    w(i,j,k)=0.d0       ! bottom wall
-            if (kg .eq. nz)   u(i,j,k)=0.d0       ! top wall
-            if (kg .eq. nz)   v(i,j,k)=0.d0       ! top wall
-            if (kg .eq. nz+1) w(i,j,k)=0.d0       ! top wall
+            ! bottom wall 
+            if (kg .eq. 1)    u(i,j,kg-1)=  -u(i,j,kg)  !  mean value between kg and kg-1 (wall) equal to zero  
+            if (kg .eq. 1)    v(i,j,kg-1)=  -v(i,j,kg)  !  mean value between kg and kg-1 (wall) equal to zero  
+            if (kg .eq. 1)    w(i,j,k)=0.d0             !  w point is at the wall
+            ! top wall
+            if (kg .eq. nz)   u(i,j,kg+1)=  -u(i,j,kg)  !  mean value between kg and kg+1 (wall) equal to zero 
+            if (kg .eq. nz)   v(i,j,kg+1)=  -v(i,j,kg)  !  mean value between kg and kg+1 (wall) equal to zero 
+            if (kg .eq. nz+1) w(i,j,k)=0.d0             !  w point (nz+1) is at the wall
             umax=max(umax,u(i,j,k))
             vmax=max(vmax,v(i,j,k))
             wmax=max(wmax,w(i,j,k))
          enddo
       enddo
    enddo
+
 
    call MPI_Allreduce(umax,gumax,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
    call MPI_Allreduce(vmax,gvmax,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
