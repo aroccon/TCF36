@@ -62,6 +62,12 @@ If you use this code, please cite the following work:
 - 256 x 128 x 200 - 31 ms/iter - 2 x RTX5000 16GB 
 - 2048 x 768 x 576 - 323 ms/iter - 4 x A100 64 GB 
 
+## Nodes numbering and staggered grid
+
+X-pencil configuration:
+
+![Test](val/grid.png)
+
 ## Contributing
 
 We welcome all contributions that can enhance TCF36, including bug fixes, performance improvements, and new features. 
