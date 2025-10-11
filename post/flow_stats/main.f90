@@ -26,11 +26,12 @@ allocate(z(nz))
 
 dx=lx/real(nx)
 dy=ly/real(ny)
-dz=lz/(nz-1)
+dz=lz/real(nz)
 
 x=0.0d0
 y=0.0d0
 z=0.0d0
+z(1)=dz/2
 
 do i=1,nx-1
   x(i+1)=x(i)+dx
