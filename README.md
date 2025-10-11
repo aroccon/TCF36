@@ -60,6 +60,7 @@ If you use this code, please cite the following work:
 ## Performance and resolution tested (NS only)
 
 - 256 x 128 x 200 - 31 ms/iter - 2 x RTX5000 16GB 
+- 512 x 256 x 384 - 15 ms/iter - 4 x A100 64 GB 
 - 2048 x 768 x 576 - 323 ms/iter - 4 x A100 64 GB 
 
 ## Nodes numbering and staggered grid
