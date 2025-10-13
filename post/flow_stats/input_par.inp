@@ -1,12 +1,12 @@
-256   		    !nx
-128   		    !ny
-200   		    !nz
-100000           !start step
-100000           !end step
+512   		    !nx
+256   		    !ny
+384   		    !nz
+100000          !start step
+100000          !end step
 5000            !frequency
 1               !read flow fields
 0               !read phase field
-6               !lx
-3               !ly
-2               !lz
+6.28            !lx
+3.14            !ly
+2.00            !lz
 

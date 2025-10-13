@@ -1,0 +1,8 @@
+A. Roccon 13/10/2025
+Data from https://turbulence.oden.utexas.edu/data/MKM/chan180/profiles/
+Original files have been modified (header removed) to simplify upload in Matlab.
+See the original files for which column represents the corresponding variable.
+
+Direct numerical simulation of fully developed flow at different Reynolds numbers in a plane channel have been performed using the spectral numerical method of Kim, Moin and Moser (J. Fluid Mech. vol 177, page 133). 
+The friction Reynolds numbers of the simulations is 180.
+The details of the simulations are described in  Moser, Kim  and Mansour ( Phys. Fluids, vol 11(4) , page 943). 
