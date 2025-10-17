@@ -43,7 +43,7 @@ double complex, pointer, device, contiguous :: work_d(:), work_halo_d(:), work_d
 character(len=40) :: namefile
 character(len=4) :: itcount
 ! Code variables
-double precision ::err,maxErr,zwall,meanp,gmeanp
+double precision ::err, maxErr, meanp, gmeanp
 double complex, device, pointer :: psi3d(:,:,:)
 double precision :: k2
 !integer :: il, jl, ig, jg
@@ -206,8 +206,8 @@ do j = 2, ny
    y(j) = y(j-1) + dy
 enddo
 do k = 1, nz
-   Zk=(k-0.5d0)/lz
-   z(k)=0.5d0*(1.d0 + (tanh(1.6d0*(Zk-0.5d0)))/(tanh(zwall)))
+  csi=(dble(k)-0.5d0)/dble(nz)         
+  z(k) = 0.5d0*dble(lz)*(1.d0+tanh(a*(csi-0.5d0))/tanh(0.5d0*a))
 enddo
 ! wavenumber
 do i = 1, nx/2
@@ -314,7 +314,6 @@ if (rank.eq.0) write(*,*) "Initialize velocity field (fresh start)"
                u(i,j,k) =  u(i,j,k) + amp*sin(twopi*mx*x(i)/lx)*(-twopi*my/ly)*sin(2.d0*twopi*my*y(jg)/ly)*sin(twopi*z(kg)/lz)*sin(twopi*z(kg)/lz)
                v(i,j,k) = -amp*cos(twopi*my*y(jg)/ly)*(twopi*mx/lx)*cos(twopi*mx*x(i)/lx)*sin(twopi*z(kg)/lz)*sin(twopi*z(kg)/lz)
                w(i,j,k) =  amp*cos(twopi*mx*x(i)/lx)*(twopi*mx/lx)*sin(twopi*my*y(jg)/ly)*sin(twopi*z(kg)/lz)*sin(twopi*z(kg)/lz)
-
                ! u(i,j,k) =  0.0d0
                ! v(i,j,k) =  0.0d0 
                ! w(i,j,k) =  0.0d0 
@@ -498,11 +497,11 @@ do t=tstart,tfin
             ! convective (first three lines) and diffusive (last three lines)
             rhsphi(i,j,k) =   &
                   - (u(ip,j,k)*0.5d0*(phi(ip,j,k)+phi(i,j,k)) - u(i,j,k)*0.5d0*(phi(i,j,k)+phi(im,j,k)))*dxi  &  
-                  - (v(i,jp,k)*0.5d0*(phi(i,jp,k)+phi(i,j,k)) - v(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,jm,k)))*dxi  &  
-                  - (w(i,j,kp)*0.5d0*(phi(i,j,kp)+phi(i,j,k)) - w(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,j,km)))*dxi  &  
+                  - (v(i,jp,k)*0.5d0*(phi(i,jp,k)+phi(i,j,k)) - v(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,jm,k)))*dyi  &  
+                  - (w(i,j,kp)*0.5d0*(phi(i,j,kp)+phi(i,j,k)) - w(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,j,km)))*dzi  &  
                         + gamma*(eps*(phi(ip,j,k)-2.d0*phi(i,j,k)+phi(im,j,k))*ddxi + &                   
-                                 eps*(phi(i,jp,k)-2.d0*phi(i,j,k)+phi(i,jm,k))*ddxi + &                   
-                                 eps*(phi(i,j,kp)-2.d0*phi(i,j,k)+phi(i,j,km))*ddxi)                      
+                                 eps*(phi(i,jp,k)-2.d0*phi(i,j,k)+phi(i,jm,k))*ddyi + &                   
+                                 eps*(phi(i,j,kp)-2.d0*phi(i,j,k)+phi(i,j,km))*ddzi)                      
             ! 4.1.3. Compute normals for sharpening term (gradient)
             normx(i,j,k) = 0.5d0*(psidi(ip,j,k) - psidi(im,j,k))*dxi
             normy(i,j,k) = 0.5d0*(psidi(i,jp,k) - psidi(i,jm,k))*dyi

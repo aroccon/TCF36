@@ -7,7 +7,7 @@ module param
     double precision :: ly, dy, dyi, ddyi
     double precision :: lz, dz, dzi, ddzi
     integer :: restart,tstart,tfin,dump
-    double precision :: gamma, normod, factor
+    double precision :: gamma, normod, factor, csi
     double precision :: dt,mu,rho !flow parameters
     integer :: inflow, inphi, intheta
     double precision :: radius, sigma, epsr, eps, pos, val, epsi, enum ! phase-field parameters
