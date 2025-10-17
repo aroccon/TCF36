@@ -556,6 +556,9 @@ do t=tstart,tfin
                km=k-1
                if (ip .gt. nx) ip=1
                if (im .lt. 1) im=nx
+               dzpi=1.d0/(z(kp)-z(k))
+               dzmi=1.d0/(z(k)-z(km))
+               dzci=2.d0/(dzp+dzm)
                rhsphi(i,j,k)=rhsphi(i,j,k)-gamma*((0.25d0*(1.d0-tanh_psi(ip,j,k)*tanh_psi(ip,j,k))*normx(ip,j,k) - &
                                                       0.25d0*(1.d0-tanh_psi(im,j,k)*tanh_psi(im,j,k))*normx(im,j,k))*0.5*dxi + &
                                                      (0.25d0*(1.d0-tanh_psi(i,jp,k)*tanh_psi(i,jp,k))*normy(i,jp,k) - &
@@ -621,6 +624,9 @@ do t=tstart,tfin
                ! Manual periodicity ony along x (x-pencil), along y and z directions use halos
                if (ip .gt. nx) ip=1  
                if (im .lt. 1) im=nx
+               dzpi=1.d0/(z(kp)-z(k))
+               dzmi=1.d0/(z(k)-z(km))
+               dzci=2.d0/(dzp+dzm)
                !  compute the products (conservative form)
                h11 = 0.25d0*((u(ip,j,k)+u(i,j,k))*(u(ip,j,k)+u(i,j,k))     - (u(i,j,k)+u(im,j,k))*(u(i,j,k)+u(im,j,k)))*dxi
                h12 = 0.25d0*((u(i,jp,k)+u(i,j,k))*(v(i,jp,k)+v(im,jp,k))   - (u(i,j,k)+u(i,jm,k))*(v(i,j,k)+v(im,j,k)))*dyi
@@ -640,13 +646,13 @@ do t=tstart,tfin
                ! all diffusive terms are treated explicitely
                h11 = mu*(u(ip,j,k)-2.d0*u(i,j,k)+u(im,j,k))*ddxi
                h12 = mu*(u(i,jp,k)-2.d0*u(i,j,k)+u(i,jm,k))*ddyi
-               h13 = mu*(u(i,j,kp)-2.d0*u(i,j,k)+u(i,j,km))*ddzi
+               h13 = mu*((u(i,j,kp)-u(i,j,k))*dzpi-(u(i,j,k)-u(i,j,km))*dzmi)*dzci
                h21 = mu*(v(ip,j,k)-2.d0*v(i,j,k)+v(im,j,k))*ddxi
                h22 = mu*(v(i,jp,k)-2.d0*v(i,j,k)+v(i,jm,k))*ddyi
-               h23 = mu*(v(i,j,kp)-2.d0*v(i,j,k)+v(i,j,km))*ddzi
+               h23 = mu*((v(i,j,kp)-v(i,j,k))*dzpi-(v(i,j,k)-v(i,j,km))*dzpi)*dzci
                h31 = mu*(w(ip,j,k)-2.d0*w(i,j,k)+w(im,j,k))*ddxi
                h32 = mu*(w(i,jp,k)-2.d0*w(i,j,k)+w(i,jm,k))*ddyi
-               h33 = mu*(w(i,j,kp)-2.d0*w(i,j,k)+w(i,j,km))*ddzi
+               h33 = mu*((w(i,j,kp)-w(i,j,k))*dzpi-(w(i,j,k)-w(i,j,km))*dzmi)*dzci ! not 100% sure is correct
                rhsu(i,j,k)=rhsu(i,j,k)+(h11+h12+h13)*rhoi
                rhsv(i,j,k)=rhsv(i,j,k)+(h21+h22+h23)*rhoi
                rhsw(i,j,k)=rhsw(i,j,k)+(h31+h32+h33)*rhoi
