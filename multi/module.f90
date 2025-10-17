@@ -5,7 +5,7 @@ module param
     double precision :: pi, rhoi, twopi
     double precision :: lx, dx, dxi, ddxi 
     double precision :: ly, dy, dyi, ddyi
-    double precision :: lz, dz, dzi, ddzi
+    double precision :: lz, dz, dzpi, dzmi, dzci
     integer :: restart,tstart,tfin,dump
     double precision :: gamma, normod, factor, csi
     double precision :: dt,mu,rho !flow parameters

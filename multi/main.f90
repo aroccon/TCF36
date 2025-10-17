@@ -494,18 +494,21 @@ do t=tstart,tfin
             km=k-1
             if (ip .gt. nx) ip=1
             if (im .lt. 1) im=nx
+            dzpi=1.d0/(z(kp)-z(k))
+            dzmi=1.d0/(z(k)-z(km))
+            dzci=2.d0/(dzp+dzm)
             ! convective (first three lines) and diffusive (last three lines)
             rhsphi(i,j,k) =   &
-                  - (u(ip,j,k)*0.5d0*(phi(ip,j,k)+phi(i,j,k)) - u(i,j,k)*0.5d0*(phi(i,j,k)+phi(im,j,k)))*dxi  &  
-                  - (v(i,jp,k)*0.5d0*(phi(i,jp,k)+phi(i,j,k)) - v(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,jm,k)))*dyi  &  
-                  - (w(i,j,kp)*0.5d0*(phi(i,j,kp)+phi(i,j,k)) - w(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,j,km)))*dzi  &  
+                  - (u(ip,j,k)*0.5d0*(phi(ip,j,k)+phi(i,j,k)) - u(i,j,k)*0.5d0*(phi(i,j,k)+phi(im,j,k)))*dxi   &  
+                  - (v(i,jp,k)*0.5d0*(phi(i,jp,k)+phi(i,j,k)) - v(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,jm,k)))*dyi   &  
+                  - (w(i,j,kp)*0.5d0*(phi(i,j,kp)+phi(i,j,k)) - w(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,j,km)))*dzci  &  
                         + gamma*(eps*(phi(ip,j,k)-2.d0*phi(i,j,k)+phi(im,j,k))*ddxi + &                   
                                  eps*(phi(i,jp,k)-2.d0*phi(i,j,k)+phi(i,jm,k))*ddyi + &                   
-                                 eps*(phi(i,j,kp)-2.d0*phi(i,j,k)+phi(i,j,km))*ddzi)                      
+                                 eps*((phi(i,j,kp)-phi(i,j,k))*dzpi - (phi(i,j,k) -phi(i,j,km))*dzmi)*dzci)                      
             ! 4.1.3. Compute normals for sharpening term (gradient)
             normx(i,j,k) = 0.5d0*(psidi(ip,j,k) - psidi(im,j,k))*dxi
             normy(i,j,k) = 0.5d0*(psidi(i,jp,k) - psidi(i,jm,k))*dyi
-            normz(i,j,k) = 0.5d0*(psidi(i,j,kp) - psidi(i,j,km))*dzi
+            normz(i,j,k) = 0.5d0*(psidi(i,j,kp) - psidi(i,j,km))*dzci
          enddo
       enddo
    enddo
@@ -558,7 +561,7 @@ do t=tstart,tfin
                                                      (0.25d0*(1.d0-tanh_psi(i,jp,k)*tanh_psi(i,jp,k))*normy(i,jp,k) - &
                                                       0.25d0*(1.d0-tanh_psi(i,jm,k)*tanh_psi(i,jm,k))*normy(i,jm,k))*0.5*dyi + &
                                                      (0.25d0*(1.d0-tanh_psi(i,j,kp)*tanh_psi(i,j,kp))*normz(i,j,kp) - &
-                                                      0.25d0*(1.d0-tanh_psi(i,j,km)*tanh_psi(i,j,km))*normz(i,j,km))*0.5*dzi)
+                                                      0.25d0*(1.d0-tanh_psi(i,j,km)*tanh_psi(i,j,km))*normz(i,j,km))*0.5*dzci)
             enddo
         enddo
     enddo
@@ -621,13 +624,13 @@ do t=tstart,tfin
                !  compute the products (conservative form)
                h11 = 0.25d0*((u(ip,j,k)+u(i,j,k))*(u(ip,j,k)+u(i,j,k))     - (u(i,j,k)+u(im,j,k))*(u(i,j,k)+u(im,j,k)))*dxi
                h12 = 0.25d0*((u(i,jp,k)+u(i,j,k))*(v(i,jp,k)+v(im,jp,k))   - (u(i,j,k)+u(i,jm,k))*(v(i,j,k)+v(im,j,k)))*dyi
-               h13 = 0.25d0*((u(i,j,kp)+u(i,j,k))*(w(i,j,kp)+w(im,j,kp))   - (u(i,j,k)+u(i,j,km))*(w(i,j,k)+w(im,j,k)))*dzi
+               h13 = 0.25d0*((u(i,j,kp)+u(i,j,k))*(w(i,j,kp)+w(im,j,kp))   - (u(i,j,k)+u(i,j,km))*(w(i,j,k)+w(im,j,k)))*dzci
                h21 = 0.25d0*((u(ip,j,k)+u(ip,jm,k))*(v(ip,j,k)+v(i,j,k))   - (u(i,j,k)+u(i,jm,k))*(v(i,j,k)+v(im,j,k)))*dxi
                h22 = 0.25d0*((v(i,jp,k)+v(i,j,k))*(v(i,jp,k)+v(i,j,k))     - (v(i,j,k)+v(i,jm,k))*(v(i,j,k)+v(i,jm,k)))*dyi
-               h23 = 0.25d0*((w(i,j,kp)+w(i,jm,kp))*(v(i,j,kp)+v(i,j,k))   - (w(i,j,k)+w(i,jm,k))*(v(i,j,k)+v(i,j,km)))*dzi
+               h23 = 0.25d0*((w(i,j,kp)+w(i,jm,kp))*(v(i,j,kp)+v(i,j,k))   - (w(i,j,k)+w(i,jm,k))*(v(i,j,k)+v(i,j,km)))*dzci
                h31 = 0.25d0*((w(ip,j,k)+w(i,j,k))*(u(ip,j,k)+u(ip,j,km))   - (w(i,j,k)+w(im,j,k))*(u(i,j,k)+u(i,j,km)))*dxi
                h32 = 0.25d0*((v(i,jp,k)+v(i,jp,km))*(w(i,jp,k)+w(i,j,k))   - (v(i,j,k)+v(i,j,km))*(w(i,j,k)+w(i,jm,k)))*dyi
-               h33 = 0.25d0*((w(i,j,kp)+w(i,j,k))*(w(i,j,kp)+w(i,j,k))     - (w(i,j,k)+w(i,j,km))*(w(i,j,k)+w(i,j,km)))*dzi
+               h33 = 0.25d0*((w(i,j,kp)+w(i,j,k))*(w(i,j,kp)+w(i,j,k))     - (w(i,j,k)+w(i,j,km))*(w(i,j,k)+w(i,j,km)))*dzci
                ! add to the rhs
                rhsu(i,j,k)=-(h11+h12+h13)
                rhsv(i,j,k)=-(h21+h22+h23)
