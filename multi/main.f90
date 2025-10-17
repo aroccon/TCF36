@@ -157,21 +157,12 @@ nElemY = piY%size
 ! Pencil info in Z-configuration present in PiZ
 CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_desc, piZ, 3))
 nElemZ = piZ%size
-
 ! Get workspace sizes for transpose (1st row, not used) and halo (2nd row, used)
 CHECK_CUDECOMP_EXIT(cudecompGetTransposeWorkspaceSize(handle, grid_desc, nElemWork))
 CHECK_CUDECOMP_EXIT(cudecompGetHaloWorkspaceSize(handle, grid_desc, 1, halo, nElemWork_halo))
 
 
-
-
-
-
 ! Get pencil info for the grid descriptor in the complex space 
-!gdims = [nx/2+1, ny, nz]
-!config%gdims = gdims
-!CHECK_CUDECOMP_EXIT(cudecompGridDescCreate(handle, grid_descD2Z, config, options))
-
 CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_descD2Z, piX_d2z, 1,halo))
 nElemX_d2z = piX_d2z%size !<- number of total elments in x-configuratiion (include halo)
 ! Pencil info in Y-configuration present in PiY
@@ -186,8 +177,7 @@ CHECK_CUDECOMP_EXIT(cudecompGetHaloWorkspaceSize(handle, grid_descD2Z, 1, halo, 
 
 
 
-
-! CUFFT initialization -- Create Plans
+! CUFFT initialization -- Create Plans (along x anf y only, z not required)
 ! Forward 1D FFT in X: D2Z
 batchSize = piX_d2z%shape(2)*piX_d2z%shape(3) !<- number of FFT (from x-pencil dimension)
 status = cufftPlan1D(planXf, nx, CUFFT_D2Z, batchSize)
@@ -212,13 +202,14 @@ do i = 2, nx
    x(i) = x(i-1) + dx
 enddo
 y(1)=dy/2
-do i = 2, ny
-   y(i) = y(i-1) + dy
+do j = 2, ny
+   y(j) = y(j-1) + dy
 enddo
-z(1)=dz/2 
-do i = 2, nz
-   z(i) = z(i-1) + dz
+do k = 1, nz
+   Zk=(k-0.5d0)/lz
+   z(k)=0.5d0*(1.d0 + (tanh(1.6d0*(Zk-0.5d0)))/(tanh(zwall)))
 enddo
+! wavenumber
 do i = 1, nx/2
    kx(i) = (i-1)*(twopi/lx)
 enddo
