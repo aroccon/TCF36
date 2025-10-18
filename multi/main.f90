@@ -502,7 +502,7 @@ do t=tstart,tfin
                                                      (0.25d0*(1.d0-tanh_psi(i,jp,k)*tanh_psi(i,jp,k))*normy(i,jp,k) - &
                                                       0.25d0*(1.d0-tanh_psi(i,jm,k)*tanh_psi(i,jm,k))*normy(i,jm,k))*0.5*dyi + &
                                                      (0.25d0*(1.d0-tanh_psi(i,j,kp)*tanh_psi(i,j,kp))*normz(i,j,kp) - &
-                                                      0.25d0*(1.d0-tanh_psi(i,j,km)*tanh_psi(i,j,km))*normz(i,j,km))*0.5*dzi(k)) !center to center
+                                                      0.25d0*(1.d0-tanh_psi(i,j,km)*tanh_psi(i,j,km))*normz(i,j,km))*(dzi(k)+dzi(k+1))) 
             enddo
         enddo
     enddo
@@ -581,13 +581,13 @@ do t=tstart,tfin
                ! all diffusive terms are treated explicitely
                h11 = mu*(u(ip,j,k)-2.d0*u(i,j,k)+u(im,j,k))*ddxi
                h12 = mu*(u(i,jp,k)-2.d0*u(i,j,k)+u(i,jm,k))*ddyi
-               h13 = mu*((u(i,j,kp)-u(i,j,k))*dzpi-(u(i,j,k)-u(i,j,km))*dzmi)*dzci
+               h13 = mu*((u(i,j,kp)-u(i,j,k))*dzi(kp)-(u(i,j,k)-u(i,j,km))*dzi(k))*dzci
                h21 = mu*(v(ip,j,k)-2.d0*v(i,j,k)+v(im,j,k))*ddxi
                h22 = mu*(v(i,jp,k)-2.d0*v(i,j,k)+v(i,jm,k))*ddyi
-               h23 = mu*((v(i,j,kp)-v(i,j,k))*dzpi-(v(i,j,k)-v(i,j,km))*dzpi)*dzci
+               h23 = mu*((v(i,j,kp)-v(i,j,k))*dzi(kp)-(v(i,j,k)-v(i,j,km))*dzi(k))*dzci
                h31 = mu*(w(ip,j,k)-2.d0*w(i,j,k)+w(im,j,k))*ddxi
                h32 = mu*(w(i,jp,k)-2.d0*w(i,j,k)+w(i,jm,k))*ddyi
-               h33 = mu*((w(i,j,kp)-w(i,j,k))*dzpi-(w(i,j,k)-w(i,j,km))*dzmi)*dzci ! not 100% sure is correct
+               h33 = mu*((w(i,j,kp)-w(i,j,k))*dzci(kp)-(w(i,j,k)-w(i,j,km))*dzci(k))*dzi(k) ! face to face and then center to center
                rhsu(i,j,k)=rhsu(i,j,k)+(h11+h12+h13)*rhoi
                rhsv(i,j,k)=rhsv(i,j,k)+(h21+h22+h23)*rhoi
                rhsw(i,j,k)=rhsw(i,j,k)+(h31+h32+h33)*rhoi
@@ -629,12 +629,12 @@ do t=tstart,tfin
                rhstheta(i,j,k) = &
                      - (u(ip,j,k)*0.5d0*(theta(ip,j,k)+theta(i,j,k)) - u(i,j,k)*0.5d0*(theta(i,j,k)+theta(im,j,k)))*dxi &
                      - (v(i,jp,k)*0.5d0*(theta(i,jp,k)+theta(i,j,k)) - v(i,j,k)*0.5d0*(theta(i,j,k)+theta(i,jm,k)))*dyi &
-                     - (w(i,j,kp)*0.5d0*(theta(i,j,kp)+theta(i,j,k)) - w(i,j,k)*0.5d0*(theta(i,j,k)+theta(i,j,km)))*dzi
+                     - (w(i,j,kp)*0.5d0*(theta(i,j,kp)+theta(i,j,k)) - w(i,j,k)*0.5d0*(theta(i,j,k)+theta(i,j,km)))*dzci(k)
                ! diffusive terms
                rhstheta(i,j,k) = rhstheta(i,j,k) + kappa*( &
                      (theta(ip,j,k)-2.d0*theta(i,j,k)+theta(im,j,k))*ddxi + &
                      (theta(i,jp,k)-2.d0*theta(i,j,k)+theta(i,jm,k))*ddyi + &
-                     (theta(i,j,kp)-2.d0*theta(i,j,k)+theta(i,j,km))*ddzi)
+                     (theta(i,j,kp)-theta(i,j,k))*dzi(kp) - (theta(i,j,k) -theta(i,j,km))*dzi(k))*dzci(k)    ! first between centers and then betwenn faces                
             enddo
          enddo
       enddo
@@ -672,12 +672,10 @@ do t=tstart,tfin
                km=k-1
                if (ip .gt. nx) ip=1
                if (im .lt. 1) im=nx
-               ! OLD chempot, CSF or LCSF should be better with ACDI
-               !chempot=phi(i,j,k)*(1.d0-phi(i,j,k))*(1.d0-2.d0*phi(i,j,k))*epsi-eps*(phi(ip,j,k)+phi(im,j,k)+phi(i,jp,k)+phi(i,jm,k)+phi(i,j,kp)+phi(i,j,km)- 6.d0*phi(i,j,k))*ddxi
-               curv=0.5d0*(normx(ip,j,k)-normx(im,j,k))*dxi + 0.5d0*(normy(i,jp,k)-normy(i,jm,k))*dyi + + 0.5d0*(normz(i,j,kp)-normz(i,j,km))*dzi
+               curv=0.5d0*(normx(ip,j,k)-normx(im,j,k))*dxi + 0.5d0*(normy(i,jp,k)-normy(i,jm,k))*dyi + (normz(i,j,kp)-normz(i,j,km))*(dzi(k)+dzi(k+1))
                fxst(i,j,k)= -sigma*curv*0.5d0*(phi(ip,j,k)-phi(im,j,k))*dxi
                fyst(i,j,k)= -sigma*curv*0.5d0*(phi(i,jp,k)-phi(i,jm,k))*dyi
-               fzst(i,j,k)= -sigma*curv*0.5d0*(phi(i,j,kp)-phi(i,j,km))*dzi
+               fzst(i,j,k)= -sigma*curv*0.5d0*(phi(i,j,kp)-phi(i,j,km))*(dzi(k)+dzi(k+1))
             enddo
          enddo
       enddo
@@ -763,8 +761,8 @@ do t=tstart,tfin
          do j=1, piX%shape(2)
             do i=1,nx
                kg = piX%lo(3) + k - 2                   
-               if (kg .eq. 1)    theta(i,j,k-1) =  2.d0*( 1.d0) - theta(i,j,k)     ! mean value between kg and kg-1 (wall) equal to 1 
-               if (kg .eq. nz)   theta(i,j,k+1) =  2.d0*(-1.d0) - theta(i,j,k)     ! mean value between kg and kg+1 (wall) equal to 1 
+               if (kg .eq. 1)    theta(i,j,k-1) =  2.d0*( 1.d0) - theta(i,j,k)     ! mean value between kg and kg-1 (top wall) equal to 1 
+               if (kg .eq. nz)   theta(i,j,k+1) =  2.d0*(-1.d0) - theta(i,j,k)     ! mean value between kg and kg+1 (bottom wall) equal to -1 
             enddo
          enddo
       enddo
@@ -781,11 +779,11 @@ do t=tstart,tfin
                ! bottom wall 
                if (kg .eq. 1)    u(i,j,k-1)=  -u(i,j,k)  !  mean value between kg and kg-1 (wall) equal to zero  
                if (kg .eq. 1)    v(i,j,k-1)=  -v(i,j,k)  !  mean value between kg and kg-1 (wall) equal to zero  
-               if (kg .eq. 1)    w(i,j,k)=0.d0             ! w point is at the wall
+               if (kg .eq. 1)    w(i,j,k)=0.d0           ! w point is at the wall
                ! top wall
                if (kg .eq. nz)   u(i,j,k+1)=  -u(i,j,k)  !  mean value between kg and kg+1 (wall) equal to zero 
                if (kg .eq. nz)   v(i,j,k+1)=  -v(i,j,k)  !  mean value between kg and kg+1 (wall) equal to zero 
-               if (kg .eq. nz+1) w(i,j,k)=0.d0             ! w point (nz+1) is at the wall
+               if (kg .eq. nz+1) w(i,j,k)=0.d0           ! w point (nz+1) is at the wall
             enddo
          enddo
       enddo
@@ -870,10 +868,9 @@ do t=tstart,tfin
             jp=j+1
             kp=k+1
             if (ip > nx) ip=1
-            rhsp(i,j,k) =               (rho*dxi/dt)*(u(ip,j,k)-u(i,j,k))
-            rhsp(i,j,k) = rhsp(i,j,k) + (rho*dyi/dt)*(v(i,jp,k)-v(i,j,k))
-            rhsp(i,j,k) = rhsp(i,j,k) + (rho*dzi/dt)*(w(i,j,kp)-w(i,j,k))
-            !rhsp(i,j,k) = 0.d0
+            rhsp(i,j,k) =                   (rho*dxi/dt)*(u(ip,j,k)-u(i,j,k))
+            rhsp(i,j,k) = rhsp(i,j,k) +     (rho*dyi/dt)*(v(i,jp,k)-v(i,j,k))
+            rhsp(i,j,k) = rhsp(i,j,k) + (rho*dzci(k)/dt)*(w(i,j,kp)-w(i,j,k))
          enddo
       enddo
    enddo
@@ -925,19 +922,19 @@ do t=tstart,tfin
          ! Fill diagonals and rhs for each
          ! 0 and ny+1 are the ghost nodes
          do k = 1, nz
-            a(k) =  1.0d0*dzi*dzi
-            b(k) = -2.0d0*dzi*dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
-            c(k) =  1.0d0*dzi*dzi
+            a(k) =  2.0d0*dzi(k-1)**2*dzi(k)/(dzi(k-1)+dzi(k))
+            b(k) = -2.0d0*dzi(k-1)*dzi(k)                      - kx_d(ig)**2 - ky_d(jg)**2
+            c(k) =  2.0d0*dzi(k)**2*dzi(k-1)/(dzi(k-1)+dzi(k))
             d(k) =  psi3d(k,il,jl)
          enddo
          ! Neumann BC at bottom
          a(0) =  0.0d0
-         b(0) = -1.0d0*dzi*dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
-         c(0) =  1.0d0*dzi*dzi
+         b(0) = -1.d0*dzi(1)*dzi(1) - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
+         c(0) =  1.d0*dzi(1)*dzi(1)
          d(0) =  0.0d0
          ! Neumann BC at top
-         a(nz+1) =  1.0d0*dzi*dzi
-         b(nz+1) = -1.0d0*dzi*dzi - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
+         a(nz+1) =  1.0d0*dzi(nz)*dzi(nz)
+         b(nz+1) = -1.0d0*dzi(nz)*dzi(nz) - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
          c(nz+1) =  0.0d0
          d(nz+1) =  0.0d0
          ! Enforce pressure at one point? one interior point, avodig messing up with BC
@@ -1027,7 +1024,7 @@ do t=tstart,tfin
               if (im < 1) im=nx
               u(i,j,k)=u(i,j,k) - dt/rho*(p(i,j,k)-p(im,j,k))*dxi
               v(i,j,k)=v(i,j,k) - dt/rho*(p(i,j,k)-p(i,jm,k))*dyi
-              w(i,j,k)=w(i,j,k) - dt/rho*(p(i,j,k)-p(i,j,km))*dzi
+              w(i,j,k)=w(i,j,k) - dt/rho*(p(i,j,k)-p(i,j,km))*dzi(k)
           enddo
       enddo
    enddo
@@ -1080,7 +1077,7 @@ do t=tstart,tfin
 
    cflx=gumax*dt*dxi
    cfly=gvmax*dt*dyi
-   cflz=gwmax*dt*dzi
+   cflz=gwmax*dt*dzi(lz/nz) ! must be corrected
    cou=max(cflx,cfly)
    cou=max(cou,cflz)
    if (rank.eq.0) then
