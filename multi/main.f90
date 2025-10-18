@@ -25,14 +25,11 @@ integer :: pr, pc
 integer :: planXf, planXb, planY
 integer :: batchsize
 integer :: status
-! other variables (wavenumber, grid location)
-double precision, allocatable :: x(:), y(:), z(:), kx(:), ky(:)
 integer :: i,j,k,il,jl,kl,ig,jg,kg,t,stage
 integer :: im,ip,jm,jp,km,kp,last,idx
 ! TDMA variables
 double precision, allocatable :: a(:), b(:), c(:)
 double complex, allocatable :: d(:), sol(:)
-double precision, device, allocatable :: kx_d(:), ky_d(:)
 ! working arrays
 double complex, allocatable :: psi(:)
 double precision, allocatable :: ua(:,:,:)
@@ -84,8 +81,9 @@ pr = 0
 pc = 0
 halo_ext=1
 ! comm_backend = CUDECOMP_TRANSPOSE_COMM_MPI_P2P
-comm_backend = 0 ! Enable full autotuning
 
+! CuDECOMP initialization and settings 
+comm_backend = 0 ! Enable full autotuning
 CHECK_CUDECOMP_EXIT(cudecompInit(handle, MPI_COMM_WORLD))
 ! config is a struct and pr and pc are the number of pencils along the two directions
 ! gdims is the global grid
@@ -104,11 +102,9 @@ config%transpose_axis_contiguous = .true.
 config%halo_comm_backend = CUDECOMP_HALO_COMM_MPI
 ! Setting for periodic halos in all directions (non required to be in config)
 halo_periods = [.true., .true., .false.]
-
 ! create spectral grid descriptor first to select pdims for optimal transposes
 gdims = [nx/2+1, ny, nz]
 config%gdims = gdims
-
 ! Set up autotuning options for spectral grid (transpose related settings)
 CHECK_CUDECOMP_EXIT(cudecompGridDescAutotuneOptionsSetDefaults(options))
 options%dtype = CUDECOMP_DOUBLE_COMPLEX
@@ -119,9 +115,7 @@ endif
 options%transpose_use_inplace_buffers = .true.
 options%transpose_input_halo_extents(:, 1) = halo
 options%transpose_output_halo_extents(:, 4) = halo
-
 CHECK_CUDECOMP_EXIT(cudecompGridDescCreate(handle, grid_descD2Z, config, options))
-
 ! create physical grid descriptor
 ! take previous config and modify the global grid (nx instead of nx/2+1)
 ! reset transpose_comm_backend to default value to avoid picking up possible nvshmem
@@ -129,7 +123,6 @@ CHECK_CUDECOMP_EXIT(cudecompGridDescCreate(handle, grid_descD2Z, config, options
 gdims = [nx, ny, nz]
 config%gdims = gdims
 config%transpose_comm_backend = CUDECOMP_TRANSPOSE_COMM_MPI_P2P
-
 ! Set up autotuning options for physical grid (halo related settings)
 CHECK_CUDECOMP_EXIT(cudecompGridDescAutotuneOptionsSetDefaults(options))
 options%dtype = CUDECOMP_DOUBLE_COMPLEX
@@ -140,40 +133,28 @@ options%halo_extents(:) = halo
 options%halo_periods(:) = halo_periods
 options%halo_axis = 1
 CHECK_CUDECOMP_EXIT(cudecompGridDescCreate(handle, grid_desc, config, options))
-
-
-! Get pencil info for the grid descriptor in the physical space
-! This function returns a pencil struct (piX, piY or piZ) that contains the shape, global lower and upper index bounds (lo and hi), 
-! size of the pencil, and an order array to indicate the memory layout that will be used (to handle permuted, axis-contiguous layouts).
-! Additionally, there is a halo_extents data member that indicates the depth of halos for the pencil, by axis.
-! Side note:  ! cudecompGetPencilInfo(handle, grid_desc, pinfo_x, 1, [1, 1, 1]) <- in this way the x-pencil also have halo elements
-! If no halo regions are necessary, a NULL pointer can be provided in place of this array (or omitted)
-! Pencil info in x-configuration present in PiX (shape,lo,hi,halo_extents,size)
+! Get pencil info for the grid descriptor in the physical space pencil struct (piX, piY or piZ)
 CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_desc, piX, 1, halo))
 nElemX = piX%size !<- number of total elments in x-configuratiion (including halo)
-! Pencil info in Y-configuration present in PiY
 CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_desc, piY, 2))
 nElemY = piY%size
-! Pencil info in Z-configuration present in PiZ
 CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_desc, piZ, 3))
 nElemZ = piZ%size
 ! Get workspace sizes for transpose (1st row, not used) and halo (2nd row, used)
 CHECK_CUDECOMP_EXIT(cudecompGetTransposeWorkspaceSize(handle, grid_desc, nElemWork))
 CHECK_CUDECOMP_EXIT(cudecompGetHaloWorkspaceSize(handle, grid_desc, 1, halo, nElemWork_halo))
-
-
 ! Get pencil info for the grid descriptor in the complex space 
 CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_descD2Z, piX_d2z, 1,halo))
 nElemX_d2z = piX_d2z%size !<- number of total elments in x-configuratiion (include halo)
-! Pencil info in Y-configuration present in PiY
 CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_descD2Z, piY_d2z, 2))
 nElemY_d2z = piY_d2z%size
-! Pencil info in Z-configuration present in PiZ
 CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_descD2Z, piZ_d2z, 3))
 nElemZ_d2z = piZ_d2z%size
 ! Get workspace sizes for transpose (1st row,used) and halo (2nd row, not used)
 CHECK_CUDECOMP_EXIT(cudecompGetTransposeWorkspaceSize(handle, grid_descD2Z, nElemWork_d2z))
 CHECK_CUDECOMP_EXIT(cudecompGetHaloWorkspaceSize(handle, grid_descD2Z, 1, halo, nElemWork_halo_d2z))
+! End cuDecomp initialization
+
 
 
 
@@ -182,50 +163,14 @@ CHECK_CUDECOMP_EXIT(cudecompGetHaloWorkspaceSize(handle, grid_descD2Z, 1, halo, 
 batchSize = piX_d2z%shape(2)*piX_d2z%shape(3) !<- number of FFT (from x-pencil dimension)
 status = cufftPlan1D(planXf, nx, CUFFT_D2Z, batchSize)
 if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating X plan Forward'
-
 ! Backward 1D FFT in X: Z2D
 batchSize = piX_d2z%shape(2)*piX_d2z%shape(3) !<- number of FFT (from x-pencil dimension)
 status = cufftPlan1D(planXb, nx, CUFFT_Z2D, batchSize)
 if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating X plan Backward'
-
 ! it's always 2 and 3 because y-pencil have coordinates y,z,x
 batchSize = piY_d2z%shape(2)*piY_d2z%shape(3)
 status = cufftPlan1D(planY, ny, CUFFT_Z2Z, batchSize)
 if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating Y plan Forward & Backward'
-
-
-! define grid
-allocate(x(nx),y(ny),z(nz),kx(nx),ky(ny))
-! location of the pressure nodes (cell centers)
-x(1)=dx/2
-do i = 2, nx
-   x(i) = x(i-1) + dx
-enddo
-y(1)=dy/2
-do j = 2, ny
-   y(j) = y(j-1) + dy
-enddo
-do k = 1, nz
-  csi=(dble(k)-0.5d0)/dble(nz)         
-  z(k) = 0.5d0*dble(lz)*(1.d0+tanh(a*(csi-0.5d0))/tanh(0.5d0*a))
-enddo
-! wavenumber
-do i = 1, nx/2
-   kx(i) = (i-1)*(twopi/lx)
-enddo
-do i = nx/2+1, nx
-   kx(i) = (i-1-nx)*(twopi/lx)
-enddo
-do j = 1, ny/2
-   ky(j) = (j-1)*(twopi/ly)
-enddo
-do j = ny/2+1, ny
-   ky(j) = (j-1-ny)*(twopi/ly)
-enddo
-! allocate kx_d and ky_d on the device 
-allocate(kx_d, source=kx)
-allocate(ky_d, source=ky)
-
 !########################################################################################################################################
 ! 1. INITIALIZATION AND cuDECOMP AUTOTUNING : END
 !########################################################################################################################################
@@ -334,7 +279,6 @@ if (restart .eq. 1) then !restart, ignore inflow and read the tstart field
    call readfield_restart(tstart,2)
    call readfield_restart(tstart,3)
 endif
-
 
 ! update halo cells along y and z directions (enough only if pr and pc are non-unitary)
 !$acc host_data use_device(u)
@@ -494,21 +438,18 @@ do t=tstart,tfin
             km=k-1
             if (ip .gt. nx) ip=1
             if (im .lt. 1) im=nx
-            dzpi=1.d0/(z(kp)-z(k))
-            dzmi=1.d0/(z(k)-z(km))
-            dzci=2.d0/(dzp+dzm)
             ! convective (first three lines) and diffusive (last three lines)
             rhsphi(i,j,k) =   &
                   - (u(ip,j,k)*0.5d0*(phi(ip,j,k)+phi(i,j,k)) - u(i,j,k)*0.5d0*(phi(i,j,k)+phi(im,j,k)))*dxi   &  
                   - (v(i,jp,k)*0.5d0*(phi(i,jp,k)+phi(i,j,k)) - v(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,jm,k)))*dyi   &  
-                  - (w(i,j,kp)*0.5d0*(phi(i,j,kp)+phi(i,j,k)) - w(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,j,km)))*dzci  &  
+                  - (w(i,j,kp)*0.5d0*(phi(i,j,kp)+phi(i,j,k)) - w(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,j,km)))*dzci(k)  &  
                         + gamma*(eps*(phi(ip,j,k)-2.d0*phi(i,j,k)+phi(im,j,k))*ddxi + &                   
                                  eps*(phi(i,jp,k)-2.d0*phi(i,j,k)+phi(i,jm,k))*ddyi + &                   
-                                 eps*((phi(i,j,kp)-phi(i,j,k))*dzpi - (phi(i,j,k) -phi(i,j,km))*dzmi)*dzci)                      
+                                 eps*((phi(i,j,kp)-phi(i,j,k))*dzi(kp) - (phi(i,j,k) -phi(i,j,km))*dzi(k))*dzci(k))     ! first between centers and then betwenn faces                
             ! 4.1.3. Compute normals for sharpening term (gradient)
             normx(i,j,k) = 0.5d0*(psidi(ip,j,k) - psidi(im,j,k))*dxi
             normy(i,j,k) = 0.5d0*(psidi(i,jp,k) - psidi(i,jm,k))*dyi
-            normz(i,j,k) = 0.5d0*(psidi(i,j,kp) - psidi(i,j,km))*dzci
+            normz(i,j,k) = 0.5d0*(psidi(i,j,kp) - psidi(i,j,km))*dzi(k) ! center to center
          enddo
       enddo
    enddo
@@ -556,15 +497,12 @@ do t=tstart,tfin
                km=k-1
                if (ip .gt. nx) ip=1
                if (im .lt. 1) im=nx
-               dzpi=1.d0/(z(kp)-z(k))
-               dzmi=1.d0/(z(k)-z(km))
-               dzci=2.d0/(dzp+dzm)
                rhsphi(i,j,k)=rhsphi(i,j,k)-gamma*((0.25d0*(1.d0-tanh_psi(ip,j,k)*tanh_psi(ip,j,k))*normx(ip,j,k) - &
                                                       0.25d0*(1.d0-tanh_psi(im,j,k)*tanh_psi(im,j,k))*normx(im,j,k))*0.5*dxi + &
                                                      (0.25d0*(1.d0-tanh_psi(i,jp,k)*tanh_psi(i,jp,k))*normy(i,jp,k) - &
                                                       0.25d0*(1.d0-tanh_psi(i,jm,k)*tanh_psi(i,jm,k))*normy(i,jm,k))*0.5*dyi + &
                                                      (0.25d0*(1.d0-tanh_psi(i,j,kp)*tanh_psi(i,j,kp))*normz(i,j,kp) - &
-                                                      0.25d0*(1.d0-tanh_psi(i,j,km)*tanh_psi(i,j,km))*normz(i,j,km))*0.5*dzci)
+                                                      0.25d0*(1.d0-tanh_psi(i,j,km)*tanh_psi(i,j,km))*normz(i,j,km))*0.5*dzi(k)) !center to center
             enddo
         enddo
     enddo
@@ -624,19 +562,16 @@ do t=tstart,tfin
                ! Manual periodicity ony along x (x-pencil), along y and z directions use halos
                if (ip .gt. nx) ip=1  
                if (im .lt. 1) im=nx
-               dzpi=1.d0/(z(kp)-z(k))
-               dzmi=1.d0/(z(k)-z(km))
-               dzci=2.d0/(dzp+dzm)
                !  compute the products (conservative form)
                h11 = 0.25d0*((u(ip,j,k)+u(i,j,k))*(u(ip,j,k)+u(i,j,k))     - (u(i,j,k)+u(im,j,k))*(u(i,j,k)+u(im,j,k)))*dxi
                h12 = 0.25d0*((u(i,jp,k)+u(i,j,k))*(v(i,jp,k)+v(im,jp,k))   - (u(i,j,k)+u(i,jm,k))*(v(i,j,k)+v(im,j,k)))*dyi
-               h13 = 0.25d0*((u(i,j,kp)+u(i,j,k))*(w(i,j,kp)+w(im,j,kp))   - (u(i,j,k)+u(i,j,km))*(w(i,j,k)+w(im,j,k)))*dzci
+               h13 = 0.25d0*((u(i,j,kp)+u(i,j,k))*(w(i,j,kp)+w(im,j,kp))   - (u(i,j,k)+u(i,j,km))*(w(i,j,k)+w(im,j,k)))*dzci(k)
                h21 = 0.25d0*((u(ip,j,k)+u(ip,jm,k))*(v(ip,j,k)+v(i,j,k))   - (u(i,j,k)+u(i,jm,k))*(v(i,j,k)+v(im,j,k)))*dxi
                h22 = 0.25d0*((v(i,jp,k)+v(i,j,k))*(v(i,jp,k)+v(i,j,k))     - (v(i,j,k)+v(i,jm,k))*(v(i,j,k)+v(i,jm,k)))*dyi
-               h23 = 0.25d0*((w(i,j,kp)+w(i,jm,kp))*(v(i,j,kp)+v(i,j,k))   - (w(i,j,k)+w(i,jm,k))*(v(i,j,k)+v(i,j,km)))*dzci
+               h23 = 0.25d0*((w(i,j,kp)+w(i,jm,kp))*(v(i,j,kp)+v(i,j,k))   - (w(i,j,k)+w(i,jm,k))*(v(i,j,k)+v(i,j,km)))*dzci(k)
                h31 = 0.25d0*((w(ip,j,k)+w(i,j,k))*(u(ip,j,k)+u(ip,j,km))   - (w(i,j,k)+w(im,j,k))*(u(i,j,k)+u(i,j,km)))*dxi
                h32 = 0.25d0*((v(i,jp,k)+v(i,jp,km))*(w(i,jp,k)+w(i,j,k))   - (v(i,j,k)+v(i,j,km))*(w(i,j,k)+w(i,jm,k)))*dyi
-               h33 = 0.25d0*((w(i,j,kp)+w(i,j,k))*(w(i,j,kp)+w(i,j,k))     - (w(i,j,k)+w(i,j,km))*(w(i,j,k)+w(i,j,km)))*dzci
+               h33 = 0.25d0*((w(i,j,kp)+w(i,j,k))*(w(i,j,kp)+w(i,j,k))     - (w(i,j,k)+w(i,j,km))*(w(i,j,k)+w(i,j,km)))*dzi(k)
                ! add to the rhs
                rhsu(i,j,k)=-(h11+h12+h13)
                rhsv(i,j,k)=-(h21+h22+h23)
