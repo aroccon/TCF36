@@ -95,10 +95,9 @@ endif
 
 
 
-
 ! define wavenumbers and grid points axis
 ! define grid (then move in readinput)
-allocate(x(nx),y(ny),z(nz),dzci(nz),dzi(nz+1),kx(nx),ky(ny))
+allocate(x(nx),y(ny),z(0:nz+1),dzci(nz),dzi(nz+1),kx(nx),ky(ny))
 ! location of the pressure nodes (cell centers)
 x(1)=dx/2
 do i = 2, nx
@@ -108,11 +107,13 @@ y(1)=dy/2
 do j = 2, ny
    y(j) = y(j-1) + dy
 enddo
-! stretched grid along z
+! stretched grid along z; z axis include also the two ghost nodes located at +/- dz/2 above and below the wall
 do k = 1, nz
   csi=(dble(k)-0.5d0)/dble(nz)         
   z(k) = 0.5d0*dble(lz)*(1.d0+tanh(a*(csi-0.5d0))/tanh(0.5d0*a))
 enddo
+z(0)=-z(1)
+z(nz+1)= lz+(lz-z(nz))
 ! compute inverse of dz (between cell faces)
 dzci(1) = 2.d0/(z(1)+ z(2))
 dzci(nz) = 1.d0/(lz-0.5d0*(z(nz)+z(nz-1)))
