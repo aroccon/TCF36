@@ -121,7 +121,7 @@ do k = 2, nz-1
 enddo
 ! compute inverse of dz (between nodes)
 dzi(1)=0.5d0/z(1)
-dzi(nz+1)=0.50d/z(nz)
+dzi(nz+1)=0.50d/(lz-z(nz))
 do k=1, nz-1
    dzi(k) = 1.d0/(z(k+1)-z(k))
 enddo

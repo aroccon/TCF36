@@ -14,7 +14,7 @@ module param
     integer :: inflow, inphi, intheta
     double precision :: radius, sigma, epsr, eps, pos, val, epsi, enum ! phase-field parameters
     double precision :: times,timef
-    double precision :: gradpx, gradpy, noise, lflow, gflow, ubulk, cflx, cfly, cflz
+    double precision :: gradpx, gradpy, noise, lflow, gflow, ubulk, cflx, cfly, cflz, gcflz
     double precision :: amp, mx, my, mz ! for perturbed flow
     double precision :: kappa ! temperature parameters: thermal diffusivity, Prandtl number
 end module param

@@ -245,9 +245,9 @@ if (rank.eq.0) write(*,*) "Initialize velocity field (fresh start)"
    if (inflow .eq. 0) then
       if (rank.eq.0) write(*,*) "Initialize laminar flow (x) + 3D perturbation"
       do k = 1+halo_ext, piX%shape(3)-halo_ext
-         kg = piX%lo(3) + k - 2
+         kg = piX%lo(3) + k - 1 - halo_ext                   
          do j = 1+halo_ext, piX%shape(2)-halo_ext
-            jg = piX%lo(2) + j - 2
+            jg = piX%lo(2) + j - 1 - halo_ext
             do i = 1, piX%shape(1)
                amp=3.d0
                mx=3.03d0
@@ -301,9 +301,9 @@ if (rank.eq.0) write(*,*) 'Initialize phase field (fresh start)'
    if (inphi .eq. 0) then
    if (rank.eq.0) write(*,*) 'Spherical drop'
       do k = 1+halo_ext, piX%shape(3)-halo_ext
-      kg = piX%lo(3) + k - 1 
+      kg = piX%lo(3) + k - 1 - halo_ext
          do j = 1+halo_ext, piX%shape(2)-halo_ext
-         jg = piX%lo(2) + j - 1 
+         jg = piX%lo(2) + j - 1 - halo_ext
             do i = 1, piX%shape(1)
                 pos=(x(i)-lx/2)**2d0 +  (y(jg)-ly/2)**2d0 + (z(kg)-lz/2)**2d0
                 phi(i,j,k) = 0.5d0*(1.d0-tanh((sqrt(pos)-radius)/2/eps))
@@ -436,20 +436,21 @@ do t=tstart,tfin
             im=i-1
             jm=j-1
             km=k-1
+            kg = piX%lo(3)  + k - 1 - halo_ext
             if (ip .gt. nx) ip=1
             if (im .lt. 1) im=nx
             ! convective (first three lines) and diffusive (last three lines)
             rhsphi(i,j,k) =   &
                   - (u(ip,j,k)*0.5d0*(phi(ip,j,k)+phi(i,j,k)) - u(i,j,k)*0.5d0*(phi(i,j,k)+phi(im,j,k)))*dxi   &  
                   - (v(i,jp,k)*0.5d0*(phi(i,jp,k)+phi(i,j,k)) - v(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,jm,k)))*dyi   &  
-                  - (w(i,j,kp)*0.5d0*(phi(i,j,kp)+phi(i,j,k)) - w(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,j,km)))*dzci(k)  &  
+                  - (w(i,j,kp)*0.5d0*(phi(i,j,kp)+phi(i,j,k)) - w(i,j,k)*0.5d0*(phi(i,j,k)+phi(i,j,km)))*dzci(kg)  &  
                         + gamma*(eps*(phi(ip,j,k)-2.d0*phi(i,j,k)+phi(im,j,k))*ddxi + &                   
                                  eps*(phi(i,jp,k)-2.d0*phi(i,j,k)+phi(i,jm,k))*ddyi + &                   
-                                 eps*((phi(i,j,kp)-phi(i,j,k))*dzi(kp) - (phi(i,j,k) -phi(i,j,km))*dzi(k))*dzci(k))     ! first between centers and then betwenn faces                
+                                 eps*((phi(i,j,kp)-phi(i,j,k))*dzi(kg+1) - (phi(i,j,k) -phi(i,j,km))*dzi(kg))*dzci(kg))     ! first between centers and then betwenn faces                
             ! 4.1.3. Compute normals for sharpening term (gradient)
             normx(i,j,k) = 0.5d0*(psidi(ip,j,k) - psidi(im,j,k))*dxi
             normy(i,j,k) = 0.5d0*(psidi(i,jp,k) - psidi(i,jm,k))*dyi
-            normz(i,j,k) = 0.5d0*(psidi(i,j,kp) - psidi(i,j,km))*dzi(k) ! center to center
+            normz(i,j,k) = 0.5d0*(psidi(i,j,kp) - psidi(i,j,km))*dzi(kg+1) ! center to center
          enddo
       enddo
    enddo
@@ -495,6 +496,7 @@ do t=tstart,tfin
                im=i-1
                jm=j-1
                km=k-1
+               kg = piX%lo(3)  + k - 1 - halo_ext
                if (ip .gt. nx) ip=1
                if (im .lt. 1) im=nx
                rhsphi(i,j,k)=rhsphi(i,j,k)-gamma*((0.25d0*(1.d0-tanh_psi(ip,j,k)*tanh_psi(ip,j,k))*normx(ip,j,k) - &
@@ -502,7 +504,7 @@ do t=tstart,tfin
                                                      (0.25d0*(1.d0-tanh_psi(i,jp,k)*tanh_psi(i,jp,k))*normy(i,jp,k) - &
                                                       0.25d0*(1.d0-tanh_psi(i,jm,k)*tanh_psi(i,jm,k))*normy(i,jm,k))*0.5*dyi + &
                                                      (0.25d0*(1.d0-tanh_psi(i,j,kp)*tanh_psi(i,j,kp))*normz(i,j,kp) - &
-                                                      0.25d0*(1.d0-tanh_psi(i,j,km)*tanh_psi(i,j,km))*normz(i,j,km))*(dzi(k)+dzi(k+1))) 
+                                                      0.25d0*(1.d0-tanh_psi(i,j,km)*tanh_psi(i,j,km))*normz(i,j,km))/(z(kg+1)-z(kg-1))) 
             enddo
         enddo
     enddo
@@ -559,19 +561,19 @@ do t=tstart,tfin
                im=i-1
                jm=j-1
                km=k-1
-               ! Manual periodicity ony along x (x-pencil), along y and z directions use halos
+               kg = piX%lo(3)  + k - 1 - halo_ext
                if (ip .gt. nx) ip=1  
                if (im .lt. 1) im=nx
                !  compute the products (conservative form)
                h11 = 0.25d0*((u(ip,j,k)+u(i,j,k))*(u(ip,j,k)+u(i,j,k))     - (u(i,j,k)+u(im,j,k))*(u(i,j,k)+u(im,j,k)))*dxi
                h12 = 0.25d0*((u(i,jp,k)+u(i,j,k))*(v(i,jp,k)+v(im,jp,k))   - (u(i,j,k)+u(i,jm,k))*(v(i,j,k)+v(im,j,k)))*dyi
-               h13 = 0.25d0*((u(i,j,kp)+u(i,j,k))*(w(i,j,kp)+w(im,j,kp))   - (u(i,j,k)+u(i,j,km))*(w(i,j,k)+w(im,j,k)))*dzci(k)
+               h13 = 0.25d0*((u(i,j,kp)+u(i,j,k))*(w(i,j,kp)+w(im,j,kp))   - (u(i,j,k)+u(i,j,km))*(w(i,j,k)+w(im,j,k)))*dzci(kg) ! divide by cell height
                h21 = 0.25d0*((u(ip,j,k)+u(ip,jm,k))*(v(ip,j,k)+v(i,j,k))   - (u(i,j,k)+u(i,jm,k))*(v(i,j,k)+v(im,j,k)))*dxi
                h22 = 0.25d0*((v(i,jp,k)+v(i,j,k))*(v(i,jp,k)+v(i,j,k))     - (v(i,j,k)+v(i,jm,k))*(v(i,j,k)+v(i,jm,k)))*dyi
-               h23 = 0.25d0*((w(i,j,kp)+w(i,jm,kp))*(v(i,j,kp)+v(i,j,k))   - (w(i,j,k)+w(i,jm,k))*(v(i,j,k)+v(i,j,km)))*dzci(k)
+               h23 = 0.25d0*((w(i,j,kp)+w(i,jm,kp))*(v(i,j,kp)+v(i,j,k))   - (w(i,j,k)+w(i,jm,k))*(v(i,j,k)+v(i,j,km)))*dzci(kg) ! divide by cell height
                h31 = 0.25d0*((w(ip,j,k)+w(i,j,k))*(u(ip,j,k)+u(ip,j,km))   - (w(i,j,k)+w(im,j,k))*(u(i,j,k)+u(i,j,km)))*dxi
                h32 = 0.25d0*((v(i,jp,k)+v(i,jp,km))*(w(i,jp,k)+w(i,j,k))   - (v(i,j,k)+v(i,j,km))*(w(i,j,k)+w(i,jm,k)))*dyi
-               h33 = 0.25d0*((w(i,j,kp)+w(i,j,k))*(w(i,j,kp)+w(i,j,k))     - (w(i,j,k)+w(i,j,km))*(w(i,j,k)+w(i,j,km)))*dzi(k)
+               h33 = 0.25d0*((w(i,j,kp)+w(i,j,k))*(w(i,j,kp)+w(i,j,k))     - (w(i,j,k)+w(i,j,km))*(w(i,j,k)+w(i,j,km)))*dzi(kg) ! divie by disace between centers
                ! add to the rhs
                rhsu(i,j,k)=-(h11+h12+h13)
                rhsv(i,j,k)=-(h21+h22+h23)
@@ -581,13 +583,13 @@ do t=tstart,tfin
                ! all diffusive terms are treated explicitely
                h11 = mu*(u(ip,j,k)-2.d0*u(i,j,k)+u(im,j,k))*ddxi
                h12 = mu*(u(i,jp,k)-2.d0*u(i,j,k)+u(i,jm,k))*ddyi
-               h13 = mu*((u(i,j,kp)-u(i,j,k))*dzi(kp)-(u(i,j,k)-u(i,j,km))*dzi(k))*dzci
+               h13 = mu*((u(i,j,kp)-u(i,j,k))*dzi(kg+1)-(u(i,j,k)-u(i,j,km))*dzi(kg))*dzci(kg)
                h21 = mu*(v(ip,j,k)-2.d0*v(i,j,k)+v(im,j,k))*ddxi
                h22 = mu*(v(i,jp,k)-2.d0*v(i,j,k)+v(i,jm,k))*ddyi
-               h23 = mu*((v(i,j,kp)-v(i,j,k))*dzi(kp)-(v(i,j,k)-v(i,j,km))*dzi(k))*dzci
+               h23 = mu*((v(i,j,kp)-v(i,j,k))*dzi(kg+1)-(v(i,j,k)-v(i,j,km))*dzi(k))*dzci(kg)
                h31 = mu*(w(ip,j,k)-2.d0*w(i,j,k)+w(im,j,k))*ddxi
                h32 = mu*(w(i,jp,k)-2.d0*w(i,j,k)+w(i,jm,k))*ddyi
-               h33 = mu*((w(i,j,kp)-w(i,j,k))*dzci(kp)-(w(i,j,k)-w(i,j,km))*dzci(k))*dzi(k) ! face to face and then center to center
+               h33 = mu*((w(i,j,kp)-w(i,j,k))*dzci(kg+1)-(w(i,j,k)-w(i,j,km))*dzci(kg))*dzi(kg) ! face to face and then center to center
                rhsu(i,j,k)=rhsu(i,j,k)+(h11+h12+h13)*rhoi
                rhsv(i,j,k)=rhsv(i,j,k)+(h21+h22+h23)*rhoi
                rhsw(i,j,k)=rhsw(i,j,k)+(h31+h32+h33)*rhoi
@@ -623,18 +625,19 @@ do t=tstart,tfin
                im=i-1
                jm=j-1
                km=k-1
+               kg = piX%lo(3)  + k - 1 - halo_ext
                if (ip .gt. nx) ip=1
                if (im .lt. 1) im=nx
                ! convective terms
                rhstheta(i,j,k) = &
                      - (u(ip,j,k)*0.5d0*(theta(ip,j,k)+theta(i,j,k)) - u(i,j,k)*0.5d0*(theta(i,j,k)+theta(im,j,k)))*dxi &
                      - (v(i,jp,k)*0.5d0*(theta(i,jp,k)+theta(i,j,k)) - v(i,j,k)*0.5d0*(theta(i,j,k)+theta(i,jm,k)))*dyi &
-                     - (w(i,j,kp)*0.5d0*(theta(i,j,kp)+theta(i,j,k)) - w(i,j,k)*0.5d0*(theta(i,j,k)+theta(i,j,km)))*dzci(k)
+                     - (w(i,j,kp)*0.5d0*(theta(i,j,kp)+theta(i,j,k)) - w(i,j,k)*0.5d0*(theta(i,j,k)+theta(i,j,km)))*dzci(kg)
                ! diffusive terms
                rhstheta(i,j,k) = rhstheta(i,j,k) + kappa*( &
                      (theta(ip,j,k)-2.d0*theta(i,j,k)+theta(im,j,k))*ddxi + &
                      (theta(i,jp,k)-2.d0*theta(i,j,k)+theta(i,jm,k))*ddyi + &
-                     (theta(i,j,kp)-theta(i,j,k))*dzi(kp) - (theta(i,j,k) -theta(i,j,km))*dzi(k))*dzci(k)    ! first between centers and then betwenn faces                
+                     (theta(i,j,kp)-theta(i,j,k))*dzi(kg+1) - (theta(i,j,k) -theta(i,j,km))*dzi(kg))*dzci(kg)    ! first between centers and then betwenn faces                
             enddo
          enddo
       enddo
@@ -670,12 +673,13 @@ do t=tstart,tfin
                im=i-1
                jm=j-1
                km=k-1
+               kg = piX%lo(3)  + k - 1 - halo_ext
                if (ip .gt. nx) ip=1
                if (im .lt. 1) im=nx
-               curv=0.5d0*(normx(ip,j,k)-normx(im,j,k))*dxi + 0.5d0*(normy(i,jp,k)-normy(i,jm,k))*dyi + (normz(i,j,kp)-normz(i,j,km))*(dzi(k)+dzi(k+1))
+               curv=0.5d0*(normx(ip,j,k)-normx(im,j,k))*dxi + 0.5d0*(normy(i,jp,k)-normy(i,jm,k))*dyi + (normz(i,j,kp)-normz(i,j,km))/(z(kg+1)-z(kg-1))
                fxst(i,j,k)= -sigma*curv*0.5d0*(phi(ip,j,k)-phi(im,j,k))*dxi
                fyst(i,j,k)= -sigma*curv*0.5d0*(phi(i,jp,k)-phi(i,jm,k))*dyi
-               fzst(i,j,k)= -sigma*curv*0.5d0*(phi(i,j,kp)-phi(i,j,km))*(dzi(k)+dzi(k+1))
+               fzst(i,j,k)= -sigma*curv*0.5d0*(phi(i,j,kp)-phi(i,j,km))/(z(kg+1)-z(kg-1))
             enddo
          enddo
       enddo
@@ -760,7 +764,7 @@ do t=tstart,tfin
       do k=1, piX%shape(3)
          do j=1, piX%shape(2)
             do i=1,nx
-               kg = piX%lo(3) + k - 2                   
+               kg = piX%lo(3) + k - 1 - halo_ext                   
                if (kg .eq. 1)    theta(i,j,k-1) =  2.d0*( 1.d0) - theta(i,j,k)     ! mean value between kg and kg-1 (top wall) equal to 1 
                if (kg .eq. nz)   theta(i,j,k+1) =  2.d0*(-1.d0) - theta(i,j,k)     ! mean value between kg and kg+1 (bottom wall) equal to -1 
             enddo
@@ -775,7 +779,7 @@ do t=tstart,tfin
       do k=1, piX%shape(3)
          do j=1, piX%shape(2)
             do i=1,nx
-               kg = piX%lo(3)  + k - 2
+               kg = piX%lo(3) + k - 1 - halo_ext                   
                ! bottom wall 
                if (kg .eq. 1)    u(i,j,k-1)=  -u(i,j,k)  !  mean value between kg and kg-1 (wall) equal to zero  
                if (kg .eq. 1)    v(i,j,k-1)=  -v(i,j,k)  !  mean value between kg and kg-1 (wall) equal to zero  
@@ -867,10 +871,11 @@ do t=tstart,tfin
             ip=i+1
             jp=j+1
             kp=k+1
+            kg = piX%lo(3)  + k - 1 - halo_ext
             if (ip > nx) ip=1
-            rhsp(i,j,k) =                   (rho*dxi/dt)*(u(ip,j,k)-u(i,j,k))
-            rhsp(i,j,k) = rhsp(i,j,k) +     (rho*dyi/dt)*(v(i,jp,k)-v(i,j,k))
-            rhsp(i,j,k) = rhsp(i,j,k) + (rho*dzci(k)/dt)*(w(i,j,kp)-w(i,j,k))
+            rhsp(i,j,k) =                    (rho*dxi/dt)*(u(ip,j,k)-u(i,j,k))
+            rhsp(i,j,k) = rhsp(i,j,k) +      (rho*dyi/dt)*(v(i,jp,k)-v(i,j,k))
+            rhsp(i,j,k) = rhsp(i,j,k) + (rho*dzci(kg)/dt)*(w(i,j,kp)-w(i,j,k))
          enddo
       enddo
    enddo
@@ -894,13 +899,10 @@ do t=tstart,tfin
 
    call nvtxEndRange
 
-
    np(piZ_d2z%order(1)) = piZ_d2z%shape(1)
    np(piZ_d2z%order(2)) = piZ_d2z%shape(2)
    np(piZ_d2z%order(3)) = piZ_d2z%shape(3)
-   
    call c_f_pointer(c_devloc(psi_d), psi3d, piZ_d2z%shape)
-
    offsets(piZ_d2z%order(1)) = piZ_d2z%lo(1) - 1
    offsets(piZ_d2z%order(2)) = piZ_d2z%lo(2) - 1
    offsets(piZ_d2z%order(3)) = piZ_d2z%lo(3) - 1
@@ -1021,10 +1023,11 @@ do t=tstart,tfin
               im=i-1
               jm=j-1
               km=k-1
+               kg = piX%lo(3)  + k - 1 - halo_ext
               if (im < 1) im=nx
               u(i,j,k)=u(i,j,k) - dt/rho*(p(i,j,k)-p(im,j,k))*dxi
               v(i,j,k)=v(i,j,k) - dt/rho*(p(i,j,k)-p(i,jm,k))*dyi
-              w(i,j,k)=w(i,j,k) - dt/rho*(p(i,j,k)-p(i,j,km))*dzi(k)
+              w(i,j,k)=w(i,j,k) - dt/rho*(p(i,j,k)-p(i,j,km))*dzi(kg-1)
           enddo
       enddo
    enddo
@@ -1054,7 +1057,7 @@ do t=tstart,tfin
    do k=1, piX%shape(3)
       do j=1, piX%shape(2)
          do i=1,nx
-            kg = piX%lo(3) + k - 2
+            kg = piX%lo(3) + k - 1 - halo_ext                   
             ! bottom wall 
             if (kg .eq. 1)    u(i,j,k-1) =  -u(i,j,k)  !  mean value between kg and kg-1 (wall) equal to zero  
             if (kg .eq. 1)    v(i,j,k-1) =  -v(i,j,k)  !  mean value between kg and kg-1 (wall) equal to zero  
@@ -1066,46 +1069,26 @@ do t=tstart,tfin
             umax=max(umax,u(i,j,k))
             vmax=max(vmax,v(i,j,k))
             wmax=max(wmax,w(i,j,k))
+            clfz=max(clfz,abs(w(i,j,k))*dt*dzi(kg))
          enddo
       enddo
    enddo
 
-
    call MPI_Allreduce(umax,gumax,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
    call MPI_Allreduce(vmax,gvmax,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
    call MPI_Allreduce(wmax,gwmax,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
+   gumax=max(max(gumax,gvmax),gwmax) ! then used for ACDI (gamma)
 
+   call MPI_Allreduce(clfz,gclfz,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
    cflx=gumax*dt*dxi
    cfly=gvmax*dt*dyi
-   cflz=gwmax*dt*dzi(lz/nz) ! must be corrected
    cou=max(cflx,cfly)
-   cou=max(cou,cflz)
+   cou=max(cou,gcflz)
    if (rank.eq.0) then
       write(*,*) "CFL (max among tasks)", cou
       if (cou .gt. 7) stop
    endif
    
-   ! In case one wants to work with CFR
-   ! find flow-rate
-   ! X-oriented pencils
-   ! must be adapted when using non-uniform along z
-   ! computed only on face i=1 (same in the other cross-section)
-   !lflow=0.d0
-   !gflow=0.d0
-   !!$acc kernels
-   !do k=1+halo_ext, piX%shape(3)-halo_ext
-   !   do j=1+halo_ext, piX%shape(2)-halo_ext
-   !      lflow=lflow + u(i,j,k)*dy*dz
-   !   enddo
-   !enddo
-   !!$acc end kernels
-   !call MPI_Allreduce(lflow,gflow,1,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD, ierr)
-   !! find bulk velocity
-   !ubulk=gflow/lx/lz
-   !gradpx=gradpx + dt*(ubulk-1.d0)
-   !write(*,*) "ubulk", ubulk, "gradpx", gradpx
-
-
    call cpu_time(timef)
    if (rank.eq.0) print '(" Time elapsed = ",f6.1," ms")',1000*(timef-times)
    !########################################################################################################################################
