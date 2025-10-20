@@ -524,7 +524,7 @@ do t=tstart,tfin
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
-            phi(i,j,k) = phi(i,j,k) + dt*rhsphi(i,j,k)
+            !phi(i,j,k) = phi(i,j,k) + dt*rhsphi(i,j,k)
          enddo
       enddo
    enddo
@@ -570,7 +570,7 @@ do t=tstart,tfin
                im=i-1
                jm=j-1
                km=k-1
-               kg = piX%lo(3)  + k - 1 - halo_ext
+               kg=piX%lo(3) + k - 1 - halo_ext
                if (ip .gt. nx) ip=1  
                if (im .lt. 1) im=nx
                !  compute the products (conservative form)
@@ -634,7 +634,7 @@ do t=tstart,tfin
                im=i-1
                jm=j-1
                km=k-1
-               kg = piX%lo(3)  + k - 1 - halo_ext
+               kg=piX%lo(3) + k - 1 - halo_ext
                if (ip .gt. nx) ip=1
                if (im .lt. 1) im=nx
                ! convective terms
@@ -682,13 +682,13 @@ do t=tstart,tfin
                im=i-1
                jm=j-1
                km=k-1
-               kg = piX%lo(3)  + k - 1 - halo_ext
+               kg=piX%lo(3) + k - 1 - halo_ext
                if (ip .gt. nx) ip=1
                if (im .lt. 1) im=nx
                curv=0.5d0*(normx(ip,j,k)-normx(im,j,k))*dxi + 0.5d0*(normy(i,jp,k)-normy(i,jm,k))*dyi + (normz(i,j,kp)-normz(i,j,km))/(z(kg+1)-z(kg-1))
                fxst(i,j,k)= -sigma*curv*0.5d0*(phi(ip,j,k)-phi(im,j,k))*dxi
                fyst(i,j,k)= -sigma*curv*0.5d0*(phi(i,jp,k)-phi(i,jm,k))*dyi
-               fzst(i,j,k)= -sigma*curv*0.5d0*(phi(i,j,kp)-phi(i,j,km))/(z(kg+1)-z(kg-1))
+               fzst(i,j,k)= -sigma*curv*(phi(i,j,kp)-phi(i,j,km))/(z(kg+1)-z(kg-1))
             enddo
          enddo
       enddo
@@ -932,9 +932,9 @@ do t=tstart,tfin
          ! Fill diagonals and rhs for each
          ! 0 and ny+1 are the ghost nodes
          do k = 1, nz
-            a(k) =  2.0d0*dzi(k-1)**2*dzi(k)/(dzi(k-1)+dzi(k))
-            b(k) = -2.0d0*dzi(k-1)*dzi(k)                      - kx_d(ig)**2 - ky_d(jg)**2
-            c(k) =  2.0d0*dzi(k)**2*dzi(k-1)/(dzi(k-1)+dzi(k))
+            a(k) =  2.0d0*dzi(k)**2*dzi(k+1)/(dzi(k)+dzi(k+1))
+            b(k) = -2.0d0*dzi(k)*dzi(k)- kx_d(ig)**2 - ky_d(jg)**2
+            c(k) =  2.0d0*dzi(k+1)**2*dzi(k)/(dzi(k)+dzi(k++1))
             d(k) =  psi3d(k,il,jl)
          enddo
          ! Neumann BC at bottom
@@ -943,8 +943,8 @@ do t=tstart,tfin
          c(0) =  1.d0*dzi(1)*dzi(1)
          d(0) =  0.0d0
          ! Neumann BC at top
-         a(nz+1) =  1.0d0*dzi(nz)*dzi(nz)
-         b(nz+1) = -1.0d0*dzi(nz)*dzi(nz) - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
+         a(nz+1) =  1.0d0*dzi(nz+1)*dzi(nz+1)
+         b(nz+1) = -1.0d0*dzi(nz+1)*dzi(nz+1) - kx_d(ig)*kx_d(ig) - ky_d(jg)*ky_d(jg)
          c(nz+1) =  0.0d0
          d(nz+1) =  0.0d0
          ! Enforce pressure at one point? one interior point, avodig messing up with BC
@@ -1031,11 +1031,11 @@ do t=tstart,tfin
               im=i-1
               jm=j-1
               km=k-1
-               kg = piX%lo(3)  + k - 1 - halo_ext
+              kg=piX%lo(3)  + k - 1 - halo_ext
               if (im < 1) im=nx
               u(i,j,k)=u(i,j,k) - dt/rho*(p(i,j,k)-p(im,j,k))*dxi
               v(i,j,k)=v(i,j,k) - dt/rho*(p(i,j,k)-p(i,jm,k))*dyi
-              w(i,j,k)=w(i,j,k) - dt/rho*(p(i,j,k)-p(i,j,km))*dzi(kg-1)
+              w(i,j,k)=w(i,j,k) - dt/rho*(p(i,j,k)-p(i,j,km))*dzi(kg)
           enddo
       enddo
    enddo
@@ -1077,7 +1077,7 @@ do t=tstart,tfin
             umax=max(umax,u(i,j,k))
             vmax=max(vmax,v(i,j,k))
             wmax=max(wmax,w(i,j,k))
-            cflz=max(cflz,abs(w(i,j,k))*dt*dzi(kg))
+            !cflz=max(cflz,abs(w(i,j,k))*dt*dzi(kg))
          enddo
       enddo
    enddo
@@ -1087,11 +1087,12 @@ do t=tstart,tfin
    call MPI_Allreduce(umax,gumax,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
    call MPI_Allreduce(vmax,gvmax,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
    call MPI_Allreduce(wmax,gwmax,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
-   gumax=max(max(gumax,gvmax),gwmax) ! then used for ACDI (gamma)
+   !gumax=max(max(gumax,gvmax),gwmax) ! then used for ACDI (gamma)
 
-   call MPI_Allreduce(cflz,gcflz,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
+   !call MPI_Allreduce(cflz,gcflz,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
    cflx=gumax*dt*dxi
    cfly=gvmax*dt*dyi
+   cflz=gwmax*dt*lz/nz
    cou=max(cflx,cfly)
    cou=max(cou,gcflz)
    if (rank.eq.0) then

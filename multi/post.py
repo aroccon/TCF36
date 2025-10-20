@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 nx, ny, nz = 256, 128, 200
 
-data = np.fromfile('output/u_00000000.dat', dtype=np.float64)  # or float64
+data = np.fromfile('output/u_00005000.dat', dtype=np.float64)  # or float64
 print("Data size:", data.size)
 data = data.reshape((nz, ny, nx))  
 
@@ -14,7 +14,7 @@ slice_data = data[ :,slice_index, :]  # xy slice at fixed z
 print("Max:", np.max(data))
 print("Min:", np.min(data))
 plt.figure(figsize=(14,6))
-plt.imshow(slice_data, cmap='jet', origin='lower', aspect='auto')
+plt.imshow(slice_data, cmap='jet', origin='lower', aspect='3.14')
 plt.colorbar(label='Velocity')
 plt.xlabel('x')
 plt.ylabel('y')
