@@ -243,6 +243,18 @@ CHECK_CUDECOMP_EXIT(cudecompMalloc(handle, grid_descD2Z, work_halo_d_d2z, nElemW
 if (restart .eq. 0) then !fresh start Taylor Green or read from file in init folder
 if (rank.eq.0) write(*,*) "Initialize velocity field (fresh start)"
    if (inflow .eq. 0) then
+      if (rank.eq.0) write(*,*) "Initialize zero velocity field"
+      do k = 1+halo_ext, piX%shape(3)-halo_ext
+         do j = 1+halo_ext, piX%shape(2)-halo_ext
+            do i = 1, piX%shape(1)
+               u(i,j,k) =  0.0d0
+               v(i,j,k) =  0.0d0 
+               w(i,j,k) =  0.0d0 
+            enddo
+         enddo
+      enddo
+   endif
+   if (inflow .eq. 1) then
       if (rank.eq.0) write(*,*) "Initialize laminar flow (x) + 3D perturbation"
       do k = 1+halo_ext, piX%shape(3)-halo_ext
          kg = piX%lo(3) + k - 1 - halo_ext                   
@@ -259,20 +271,17 @@ if (rank.eq.0) write(*,*) "Initialize velocity field (fresh start)"
                u(i,j,k) =  u(i,j,k) + amp*sin(twopi*mx*x(i)/lx)*(-twopi*my/ly)*sin(2.d0*twopi*my*y(jg)/ly)*sin(twopi*z(kg)/lz)*sin(twopi*z(kg)/lz)
                v(i,j,k) = -amp*cos(twopi*my*y(jg)/ly)*(twopi*mx/lx)*cos(twopi*mx*x(i)/lx)*sin(twopi*z(kg)/lz)*sin(twopi*z(kg)/lz)
                w(i,j,k) =  amp*cos(twopi*mx*x(i)/lx)*(twopi*mx/lx)*sin(twopi*my*y(jg)/ly)*sin(twopi*z(kg)/lz)*sin(twopi*z(kg)/lz)
-               ! u(i,j,k) =  0.0d0
-               ! v(i,j,k) =  0.0d0 
-               ! w(i,j,k) =  0.0d0 
             enddo
          enddo
       enddo
    endif
-   if (inflow .eq. 1) then
-   if (rank.eq.0)  write(*,*) "Initialize from data"
-         call readfield(1)
-         call readfield(2)
-         call readfield(3)
-      endif
+   if (inflow .eq. 2) then
+      if (rank.eq.0)  write(*,*) "Initialize from data"
+      call readfield(1)
+      call readfield(2)
+      call readfield(3)
    endif
+endif
 if (restart .eq. 1) then !restart, ignore inflow and read the tstart field 
    if (rank.eq.0)  write(*,*) "Initialize velocity field (from output folder), iteration:", tstart
    call readfield_restart(tstart,1)
@@ -717,7 +726,6 @@ do t=tstart,tfin
                rhsu_o(i,j,k)=rhsu(i,j,k)
                rhsv_o(i,j,k)=rhsv(i,j,k)
                rhsw_o(i,j,k)=rhsw(i,j,k)
-
             enddo
          enddo
       enddo
@@ -779,7 +787,7 @@ do t=tstart,tfin
       do k=1, piX%shape(3)
          do j=1, piX%shape(2)
             do i=1,nx
-               kg = piX%lo(3) + k - 1 - halo_ext                   
+               kg = piX%lo(3) + k - 1 -halo_ext            
                ! bottom wall 
                if (kg .eq. 1)    u(i,j,k-1)=  -u(i,j,k)  !  mean value between kg and kg-1 (wall) equal to zero  
                if (kg .eq. 1)    v(i,j,k-1)=  -v(i,j,k)  !  mean value between kg and kg-1 (wall) equal to zero  
@@ -1069,17 +1077,19 @@ do t=tstart,tfin
             umax=max(umax,u(i,j,k))
             vmax=max(vmax,v(i,j,k))
             wmax=max(wmax,w(i,j,k))
-            clfz=max(clfz,abs(w(i,j,k))*dt*dzi(kg))
+            cflz=max(cflz,abs(w(i,j,k))*dt*dzi(kg))
          enddo
       enddo
    enddo
+
+   !write(*,*) "max", umax, vmax, wmax
 
    call MPI_Allreduce(umax,gumax,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
    call MPI_Allreduce(vmax,gvmax,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
    call MPI_Allreduce(wmax,gwmax,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
    gumax=max(max(gumax,gvmax),gwmax) ! then used for ACDI (gamma)
 
-   call MPI_Allreduce(clfz,gclfz,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
+   call MPI_Allreduce(cflz,gcflz,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
    cflx=gumax*dt*dxi
    cfly=gvmax*dt*dyi
    cou=max(cflx,cfly)

@@ -8,6 +8,8 @@ use temperature
 use param
 use mpivar
 implicit none
+integer :: i,j,k
+double precision :: zk
 
 open(unit=55,file='input.inp',form='formatted',status='old')
 !Time step parameters
@@ -36,6 +38,7 @@ read(55,*) kappa
 read(55,*) radius
 read(55,*) sigma
 read(55,*) epsr   
+close(55)
 
 ! compute pre-defined constants
 twopi=8.0_8*atan(1.0_8)
@@ -109,8 +112,8 @@ do j = 2, ny
 enddo
 ! stretched grid along z; z axis include also the two ghost nodes located at +/- dz/2 above and below the wall
 do k = 1, nz
-  csi=(dble(k)-0.5d0)/dble(nz)         
-  z(k) = 0.5d0*dble(lz)*(1.d0+tanh(a*(csi-0.5d0))/tanh(0.5d0*a))
+  zk=(dble(k)-0.5d0)/dble(nz)         
+  z(k) = 0.5d0*dble(lz)*(1.d0+tanh(csi*(zk-0.5d0))/tanh(0.5d0*csi))
 enddo
 z(0)=-z(1)
 z(nz+1)= lz+(lz-z(nz))
@@ -122,10 +125,11 @@ do k = 2, nz-1
 enddo
 ! compute inverse of dz (between nodes)
 dzi(1)=0.5d0/z(1)
-dzi(nz+1)=0.50d/(lz-z(nz))
-do k=1, nz-1
-   dzi(k) = 1.d0/(z(k+1)-z(k))
+!dzi(nz+1)=0.5d0/(lz-z(nz))
+do k=1, nz+1
+   dzi(k) = 1.d0/(z(k)-z(k-1))
 enddo
+!write(*,*) "dzi", dzi
 ! wavenumber
 do i = 1, nx/2
    kx(i) = (i-1)*(twopi/lx)
