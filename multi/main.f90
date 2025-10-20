@@ -156,8 +156,6 @@ CHECK_CUDECOMP_EXIT(cudecompGetHaloWorkspaceSize(handle, grid_descD2Z, 1, halo, 
 ! End cuDecomp initialization
 
 
-
-
 ! CUFFT initialization -- Create Plans (along x anf y only, z not required)
 ! Forward 1D FFT in X: D2Z
 batchSize = piX_d2z%shape(2)*piX_d2z%shape(3) !<- number of FFT (from x-pencil dimension)
@@ -190,11 +188,9 @@ allocate(psi_d(max(nElemX_d2z, nElemY_d2z, nElemZ_d2z))) ! phi on device
 #if impdiff == 1
 allocate(vel_d(max(nElemX, nElemY, nElemZ))) !for implicit diffusion
 #endif
-
 ! Pressure variable
 allocate(rhsp(piX%shape(1), piX%shape(2), piX%shape(3))) 
 allocate(p(piX%shape(1), piX%shape(2), piX%shape(3))) 
-
 !allocate variables
 !NS variables
 allocate(u(piX%shape(1),piX%shape(2),piX%shape(3)),v(piX%shape(1),piX%shape(2),piX%shape(3)),w(piX%shape(1),piX%shape(2),piX%shape(3))) !velocity vector
@@ -524,13 +520,11 @@ do t=tstart,tfin
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1,nx
-            !phi(i,j,k) = phi(i,j,k) + dt*rhsphi(i,j,k)
+            phi(i,j,k) = phi(i,j,k) + dt*rhsphi(i,j,k)
          enddo
       enddo
    enddo
    !$acc end kernels
-
-   ! 4.3 Call halo exchnages along Y and Z for phi 
    !$acc host_data use_device(phi)
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, phi, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, phi, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
@@ -582,7 +576,7 @@ do t=tstart,tfin
                h23 = 0.25d0*((w(i,j,kp)+w(i,jm,kp))*(v(i,j,kp)+v(i,j,k))   - (w(i,j,k)+w(i,jm,k))*(v(i,j,k)+v(i,j,km)))*dzci(kg) ! divide by cell height
                h31 = 0.25d0*((w(ip,j,k)+w(i,j,k))*(u(ip,j,k)+u(ip,j,km))   - (w(i,j,k)+w(im,j,k))*(u(i,j,k)+u(i,j,km)))*dxi
                h32 = 0.25d0*((v(i,jp,k)+v(i,jp,km))*(w(i,jp,k)+w(i,j,k))   - (v(i,j,k)+v(i,j,km))*(w(i,j,k)+w(i,jm,k)))*dyi
-               h33 = 0.25d0*((w(i,j,kp)+w(i,j,k))*(w(i,j,kp)+w(i,j,k))     - (w(i,j,k)+w(i,j,km))*(w(i,j,k)+w(i,j,km)))*dzi(kg) ! divie by disace between centers
+               h33 = 0.25d0*((w(i,j,kp)+w(i,j,k))*(w(i,j,kp)+w(i,j,k))     - (w(i,j,k)+w(i,j,km))*(w(i,j,k)+w(i,j,km)))*dzi(kg) ! divie by distance between centers
                ! add to the rhs
                rhsu(i,j,k)=-(h11+h12+h13)
                rhsv(i,j,k)=-(h21+h22+h23)
@@ -650,7 +644,6 @@ do t=tstart,tfin
             enddo
          enddo
       enddo
-
       ! Temperature time integration
       !$acc parallel loop collapse(3)
       do k=1+halo_ext, piX%shape(3)-halo_ext

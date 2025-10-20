@@ -1,5 +1,5 @@
 module load gcc
 rm -rf output
 mkdir output
-maker
+make
 ./stats

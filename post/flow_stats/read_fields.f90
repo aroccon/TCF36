@@ -56,7 +56,7 @@ if (uflag .eq. 1) then
   enddo
   do i=1,nx
     do j=1,ny
-      w(i,j,nz)=0.5d0*(w(i,j,nz) + 0.d0) ! assume nz+1 is 0
+      w(i,j,nz)=0.5d0*(w(i,j,nz) + 0.d0) ! assume nz+1 is 0 (no-slip)
     enddo
   enddo
 endif
@@ -81,7 +81,6 @@ do k=1,nz
   enddo
 enddo
 mean=mean/(dble(nx*ny))
-
 
 ! rms
 do k=1,nz
@@ -130,7 +129,7 @@ do k=1,nz
 enddo
 
 
-namefile = 'stat_'//trim(numfile)//'.dat'
+namefile = 'output/stat_'//trim(numfile)//'.dat'
 !write(*,*) "name", namefile
 open(66,status='replace',file=trim(namefile),form='formatted')
 write(66,'(13(a12,2x))') '% z','u mean','v mean','w mean','u rms','v rms','w rms','u skw','v skw','w skw','u flt','v flt','w flt'
