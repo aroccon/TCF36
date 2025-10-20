@@ -67,7 +67,7 @@ If you use this code, please cite the following work:
 
 X-pencil configuration:
 
-![Test](val/grid3.png)
+![Test](val/grid5.png)
 
 ## Contributing
 

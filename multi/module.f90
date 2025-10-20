@@ -5,14 +5,16 @@ module param
     double precision :: pi, rhoi, twopi
     double precision :: lx, dx, dxi, ddxi 
     double precision :: ly, dy, dyi, ddyi
-    double precision :: lz, dz, dzi, ddzi
+    double precision :: lz
+    double precision, allocatable :: x(:), y(:), z(:), dzi(:), dzci(:), kx(:), ky(:)
+    double precision, device, allocatable :: kx_d(:), ky_d(:)
     integer :: restart,tstart,tfin,dump
-    double precision :: gamma, normod, factor
+    double precision :: gamma, normod, factor, csi
     double precision :: dt,mu,rho !flow parameters
     integer :: inflow, inphi, intheta
     double precision :: radius, sigma, epsr, eps, pos, val, epsi, enum ! phase-field parameters
     double precision :: times,timef
-    double precision :: gradpx, gradpy, noise, lflow, gflow, ubulk, cflx, cfly, cflz
+    double precision :: gradpx, gradpy, noise, lflow, gflow, ubulk, cflx, cfly, cflz, gcflz
     double precision :: amp, mx, my, mz ! for perturbed flow
     double precision :: kappa ! temperature parameters: thermal diffusivity, Prandtl number
 end module param
