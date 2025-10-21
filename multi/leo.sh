@@ -4,4 +4,5 @@ module load hpcx-mpi/2.19
 cp Makefile_leonardo Makefile
 make clean
 make
-#mpirun -np 2 ./mhit36 
+mkdir -p output
+
