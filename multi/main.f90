@@ -589,7 +589,7 @@ do t=tstart,tfin
                h13 = mu*((u(i,j,kp)-u(i,j,k))*dzi(kg+1)-(u(i,j,k)-u(i,j,km))*dzi(kg))*dzci(kg)
                h21 = mu*(v(ip,j,k)-2.d0*v(i,j,k)+v(im,j,k))*ddxi
                h22 = mu*(v(i,jp,k)-2.d0*v(i,j,k)+v(i,jm,k))*ddyi
-               h23 = mu*((v(i,j,kp)-v(i,j,k))*dzi(kg+1)-(v(i,j,k)-v(i,j,km))*dzi(k))*dzci(kg)
+               h23 = mu*((v(i,j,kp)-v(i,j,k))*dzi(kg+1)-(v(i,j,k)-v(i,j,km))*dzi(kg))*dzci(kg)
                h31 = mu*(w(ip,j,k)-2.d0*w(i,j,k)+w(im,j,k))*ddxi
                h32 = mu*(w(i,jp,k)-2.d0*w(i,j,k)+w(i,jm,k))*ddyi
                h33 = mu*((w(i,j,kp)-w(i,j,k))*dzci(kg+1)-(w(i,j,k)-w(i,j,km))*dzci(kg))*dzi(kg) ! face to face and then center to center
@@ -925,9 +925,9 @@ do t=tstart,tfin
          ! Fill diagonals and rhs for each
          ! 0 and ny+1 are the ghost nodes
          do k = 1, nz
-            a(k) =  2.0d0*dzi(k)**2*dzi(k+1)/(dzi(k)+dzi(k+1))
-            b(k) = -2.0d0*dzi(k)*dzi(k)- kx_d(ig)**2 - ky_d(jg)**2
-            c(k) =  2.0d0*dzi(k+1)**2*dzi(k)/(dzi(k)+dzi(k++1))
+            a(k) =  2.0d0*(dzi(k)**2*dzi(k+1))/(dzi(k)+dzi(k+1))
+            c(k) =  2.0d0*(dzi(k)*dzi(k+1)**2)/(dzi(k)+dzi(k+1))
+            b(k) = -a(k) - c(k) - (kx_d(ig)**2 + ky_d(jg)**2)
             d(k) =  psi3d(k,il,jl)
          enddo
          ! Neumann BC at bottom
