@@ -83,7 +83,7 @@ if (rank .eq. 0) then
     write(*,*) "Lx        ", lx
     write(*,*) "Ly        ", ly
     write(*,*) "Lz        ", lz
-    write(*,*) "Clustering", csi
+    write(*,*) "Z-stretching", csi
 !    write(*,*) "dx", dx
 !    write(*,*) "dxi", dxi
 !    write(*,*) "ddxi", ddxi
