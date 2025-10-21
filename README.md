@@ -1,6 +1,6 @@
 # TCF36
 
-Extended version of MHIT36 for turbulent channel flow.
+Code for turbulent channel flow simulations.
 Finite-difference code based on the fractional step method.
 Solution of Navier-Stokes equations + phase-field method (ACDI) + energy equation (passive scalar).
 
@@ -21,14 +21,12 @@ If you use this code, please cite the following work:
 ```
 
 
-## Check list of TCF36
+## Check list of features implemented in TCF36
 - Boundary condition for no-slip at the two walls ✅
-- Laminar solution (no need of TDMA) ✅
-- TDMA ✅
+- Laminar solution (uniform and non-uniform grids) ✅
 - TDMA validation ✅ 
 - Turbulent channel flow ✅ 
-- Stretched grids 🚧
-- Implicit diffusion along z (skeleton and flag introduced) 🚧
+- Stretched grids ✅
 
 ## How to run TCF36
 **Compile cuDecomp**  

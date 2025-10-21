@@ -765,7 +765,7 @@ do t=tstart,tfin
       do k=1, piX%shape(3)
          do j=1, piX%shape(2)
             do i=1,nx
-               kg = piX%lo(3) + k - 1 - halo_ext                   
+               kg=piX%lo(3) + k - 1 - halo_ext                   
                if (kg .eq. 1)    theta(i,j,k-1) =  2.d0*( 1.d0) - theta(i,j,k)     ! mean value between kg and kg-1 (top wall) equal to 1 
                if (kg .eq. nz)   theta(i,j,k+1) =  2.d0*(-1.d0) - theta(i,j,k)     ! mean value between kg and kg+1 (bottom wall) equal to -1 
             enddo
@@ -780,7 +780,7 @@ do t=tstart,tfin
       do k=1, piX%shape(3)
          do j=1, piX%shape(2)
             do i=1,nx
-               kg = piX%lo(3) + k - 1 -halo_ext            
+               kg=piX%lo(3) + k - 1 - halo_ext            
                ! bottom wall 
                if (kg .eq. 1)    u(i,j,k-1)=  -u(i,j,k)  !  mean value between kg and kg-1 (wall) equal to zero  
                if (kg .eq. 1)    v(i,j,k-1)=  -v(i,j,k)  !  mean value between kg and kg-1 (wall) equal to zero  
@@ -872,7 +872,7 @@ do t=tstart,tfin
             ip=i+1
             jp=j+1
             kp=k+1
-            kg = piX%lo(3)  + k - 1 - halo_ext
+            kg=piX%lo(3)  + k - 1 - halo_ext
             if (ip > nx) ip=1
             rhsp(i,j,k) =                    (rho*dxi/dt)*(u(ip,j,k)-u(i,j,k))
             rhsp(i,j,k) = rhsp(i,j,k) +      (rho*dyi/dt)*(v(i,jp,k)-v(i,j,k))
@@ -920,10 +920,8 @@ do t=tstart,tfin
          jg = yoff + jl
          ig = xoff + il
          ! Set up tridiagonal system for each i and j
-         ! The system is: (A_z) * pc(k-1,ky,kx) + (B_k) * pc(k,ky,kx) + (C_k) * pc(k,ky,kx) = rhs(k,ky,kx)
-         ! Neumann BC: d/dz pc = 0 at w collocation points
-         ! Fill diagonals and rhs for each
-         ! 0 and ny+1 are the ghost nodes
+         ! The system is: ak*pc(k-1,ky,kx) + bk*pc(k,ky,kx) + ck*pc(k,ky,kx) = rhs(k,ky,kx)
+         ! Neumann BC: d/dz pc = 0 at w collocation points, 0 and nz+1 are the ghost nodes
          do k = 1, nz
             a(k) =  2.0d0*(dzi(k)**2*dzi(k+1))/(dzi(k)+dzi(k+1))
             c(k) =  2.0d0*(dzi(k)*dzi(k+1)**2)/(dzi(k)+dzi(k+1))
@@ -965,10 +963,7 @@ do t=tstart,tfin
       end do
    end do
 
-
-
    call nvtxStartRange("FFT backwards along x and y w/ transpositions")
-
    ! psi(z,kx,ky) -> psi(ky,z,kx)
    CHECK_CUDECOMP_EXIT(cudecompTransposeZToY(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX))
    ! psi(ky,z,kx) -> psi(y,z,kx)
@@ -991,12 +986,9 @@ do t=tstart,tfin
          end do
       end do
    end do
-
       
    call nvtxEndRange
-
    ! update halo nodes with pressure 
-   ! Update X-pencil halos 
    !$acc host_data use_device(p)
     CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, p, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
     CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, p, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
@@ -1075,17 +1067,14 @@ do t=tstart,tfin
       enddo
    enddo
 
-   !write(*,*) "max", umax, vmax, wmax
-
    call MPI_Allreduce(umax,gumax,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
    call MPI_Allreduce(vmax,gvmax,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
    call MPI_Allreduce(wmax,gwmax,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
-   !gumax=max(max(gumax,gvmax),gwmax) ! then used for ACDI (gamma)
 
    !call MPI_Allreduce(cflz,gcflz,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_WORLD, ierr)
    cflx=gumax*dt*dxi
    cfly=gvmax*dt*dyi
-   cflz=gwmax*dt*lz/nz
+   cflz=gwmax*dt*lz/nz !this can be improved
    cou=max(cflx,cfly)
    cou=max(cou,gcflz)
    if (rank.eq.0) then
