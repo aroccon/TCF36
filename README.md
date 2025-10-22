@@ -3,11 +3,7 @@
 Code for turbulent channel flow simulations.
 Finite-difference code based on the fractional step method.
 Solution of Navier-Stokes equations + phase-field method (ACDI) + energy equation (passive scalar).
-
-Time integration, two options:
-- Fully explicit: Euler explicit for ACDI + RK3 for Navier-Stokes and temperature
-- Implicit CN for z-diffusive terms of Navier-Stokes equations and RK3 for the rest of the NS terms, RK3 for temperature and Euler explicit for ACDI. This latter option is not fully implemented, only the skeleton and the TDMA are present.
-
+For time integration, a fully explicit scheme is used: Euler explicit for ACDI + RK3 for Navier-Stokes and temperature
 
 If you use this code, please cite the following work: 
 ```bibtex
@@ -19,7 +15,6 @@ If you use this code, please cite the following work:
   doi     = {https://doi.org/10.1016/j.cpc.2025.109804}
 }
 ```
-
 
 ## Check list of features implemented in TCF36
 - Boundary condition for no-slip at the two walls ✅
@@ -47,9 +42,8 @@ If you use this code, please cite the following work:
 - ✅ No recompilation required when changing MPI processes.  
 
 **Optional features (conditional compilation)**  
-- **Phase-field module:** Can be enabled or disabled. Default is single-phase.  
-- **Implicit diffusion along z:** Can be enabled or disabled. ⚠️ Not yet implemented.  
-
+- Phase-field module: Can be enabled or disabled. Default is single-phase.  
+- Passive scaler: Can be enabled or disabled. Default is single-phase.  
 
 ## Turbulent channel flow 
 

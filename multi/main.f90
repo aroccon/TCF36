@@ -57,8 +57,7 @@ double precision, parameter :: beta(3)  = (/ 0.d0,       -17.d0/60.d0,  -5.d0/12
 #define phiflag 0
 ! Enable or disable temperature field
 #define thetaflag 0
-! Implicit diffusion along z flag (to be implemented, only skeleton is present)
-#define impdiff 0 
+
 
 !########################################################################################################################################
 ! 1. INITIALIZATION OF MPI AND cuDECOMP AUTOTUNING : START
@@ -581,9 +580,7 @@ do t=tstart,tfin
                rhsu(i,j,k)=-(h11+h12+h13)
                rhsv(i,j,k)=-(h21+h22+h23)
                rhsw(i,j,k)=-(h31+h32+h33)
-               ! viscous term
-               #if impdiff == 0
-               ! all diffusive terms are treated explicitely
+               ! viscous/diffusive terms
                h11 = mu*(u(ip,j,k)-2.d0*u(i,j,k)+u(im,j,k))*ddxi
                h12 = mu*(u(i,jp,k)-2.d0*u(i,j,k)+u(i,jm,k))*ddyi
                h13 = mu*((u(i,j,kp)-u(i,j,k))*dzi(kg+1)-(u(i,j,k)-u(i,j,km))*dzi(kg))*dzci(kg)
@@ -595,20 +592,7 @@ do t=tstart,tfin
                h33 = mu*((w(i,j,kp)-w(i,j,k))*dzci(kg+1)-(w(i,j,k)-w(i,j,km))*dzci(kg))*dzi(kg) ! face to face and then center to center
                rhsu(i,j,k)=rhsu(i,j,k)+(h11+h12+h13)*rhoi
                rhsv(i,j,k)=rhsv(i,j,k)+(h21+h22+h23)*rhoi
-               rhsw(i,j,k)=rhsw(i,j,k)+(h31+h32+h33)*rhoi
-               #endif
-               #if impdiff == 1
-               ! x- and -y diffusive terms treated explicitely, z-implicit (done after)
-               h11 = mu*(u(ip,j,k)-2.d0*u(i,j,k)+u(im,j,k))*ddxi
-               h12 = mu*(u(i,jp,k)-2.d0*u(i,j,k)+u(i,jm,k))*ddyi
-               h21 = mu*(v(ip,j,k)-2.d0*v(i,j,k)+v(im,j,k))*ddxi
-               h22 = mu*(v(i,jp,k)-2.d0*v(i,j,k)+v(i,jm,k))*ddyi
-               h31 = mu*(w(ip,j,k)-2.d0*w(i,j,k)+w(im,j,k))*ddxi
-               h32 = mu*(w(i,jp,k)-2.d0*w(i,j,k)+w(i,jm,k))*ddyi
-               rhsu(i,j,k)=rhsu(i,j,k)+(h11+h12)*rhoi
-               rhsv(i,j,k)=rhsv(i,j,k)+(h21+h22)*rhoi
-               rhsw(i,j,k)=rhsw(i,j,k)+(h31+h32)*rhoi
-               #endif
+               rhsw(i,j,k)=rhsw(i,j,k)+(h31+h32+h33)*rhoi               
                ! Pressure driven
                rhsu(i,j,k)=rhsu(i,j,k) - gradpx
                rhsv(i,j,k)=rhsv(i,j,k) - gradpy
@@ -742,8 +726,6 @@ do t=tstart,tfin
       !!$acc end kernels
       #endif
 
-
-
       ! 5.3 update halos (y and z directions), required to then compute the RHS of Poisson equation because of staggered grid
       !$acc host_data use_device(u)
       CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, u, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
@@ -758,8 +740,7 @@ do t=tstart,tfin
       CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, w, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
       !$acc end host_data 
 
-      ! impose temperature boundary conditions
-      ! interpolated as done for the velocity (see node sketch)
+      ! impose temperature boundary conditions, interpolated as done for the velocity (see node sketch)
       #if thetaflag == 1
       !$acc parallel loop collapse(3)
       do k=1, piX%shape(3)
@@ -774,8 +755,8 @@ do t=tstart,tfin
       #endif
 
       ! impose velocity boundary conditions, can be optimized, no real gain
-      ! w is at the wall, u and v interpolate so that the mean value is zero
-      ! no-slip assumted, i.e. u=0, can be extented to any value
+      ! w is at the wall, u and v interpolate so that the mean value is zero, no-slip assumted, i.e. u=0, can be extented to any value
+      ! even when stretched the spacing cell face is centered
       !$acc parallel loop collapse(3)
       do k=1, piX%shape(3)
          do j=1, piX%shape(2)
@@ -791,69 +772,12 @@ do t=tstart,tfin
                if (kg .eq. nz+1) w(i,j,k)=0.d0           ! w point (nz+1) is at the wall
             enddo
          enddo
-      enddo
-
-      !if z-diffusione is treated implicitely call the TDMA solver for each component
-      #if impdiff == 1
-      ! work in progress, do not use atm
-
-      ! u-component
-      !!$acc host_data use_device(u)
-      !CHECK_CUDECOMP_EXIT(cudecompTransposeXToY(handle, grid_desc,     u, vel_d, work_d, CUDECOMP_DOUBLE))
-      !CHECK_CUDECOMP_EXIT(cudecompTransposeYToZ(handle, grid_desc, vel_d, vel_d, work_d, CUDECOMP_DOUBLE)) 
-      !!$acc end host_data
-
-      !call tdmau
-      !! this tdma work with a system with dimension nz and no ghost nodes
-
-      !!$acc host_data use_device(u)
-      !CHECK_CUDECOMP_EXIT(cudecompTransposeZToY(handle, grid_desc, vel_d, vel_d, work_d, CUDECOMP_DOUBLE))
-      !CHECK_CUDECOMP_EXIT(cudecompTransposeYToX(handle, grid_desc, vel_d,     u, work_d, CUDECOMP_DOUBLE)) 
-      !!$acc end host_data
-
-      ! v-component
-      !!$acc host_data use_device(v)
-      !CHECK_CUDECOMP_EXIT(cudecompTransposeXToY(handle, grid_desc,     v, vel_d, work_d, CUDECOMP_DOUBLE))
-      !CHECK_CUDECOMP_EXIT(cudecompTransposeYToZ(handle, grid_desc, vel_d, vel_d, work_d, CUDECOMP_DOUBLE)) 
-      !!$acc end host_data
-
-      !call tdmav
-      ! this tdma work with a system with dimension nz and no ghost nodes
-
-      !!$acc host_data use_device(v)
-      !CHECK_CUDECOMP_EXIT(cudecompTransposeZToY(handle, grid_desc, vel_d, vel_d, work_d, CUDECOMP_DOUBLE))
-      !CHECK_CUDECOMP_EXIT(cudecompTransposeYToX(handle, grid_desc, vel_d,     v, work_d, CUDECOMP_DOUBLE)) 
-      !!$acc end host_data
-
-      ! w-component
-      !!$acc host_data use_device(w)
-      !CHECK_CUDECOMP_EXIT(cudecompTransposeXToY(handle, grid_desc,     w, vel_d, work_d, CUDECOMP_DOUBLE))
-      !CHECK_CUDECOMP_EXIT(cudecompTransposeYToZ(handle, grid_desc, vel_d, vel_d, work_d, CUDECOMP_DOUBLE)) 
-      !!$acc end host_data
-
-      !call tdmaw
-      ! this tdma work with a system with dimension nz+1 and no ghost nodes
-
-      !!$acc host_data use_device(w)
-      !!CHECK_CUDECOMP_EXIT(cudecompTransposeZToY(handle, grid_desc, vel_d, vel_d, work_d, CUDECOMP_DOUBLE))
-      !!CHECK_CUDECOMP_EXIT(cudecompTransposeYToX(handle, grid_desc, vel_d,     w, work_d, CUDECOMP_DOUBLE)) 
-      !!$acc end host_data
-
-      #endif
-
-      
+      enddo  
    enddo
-
-
    !########################################################################################################################################
    ! END STEP 5: USTAR COMPUTATION 
    !########################################################################################################################################
    call nvtxEndRange
-
-
-
-
-
 
    call nvtxStartRange("Poisson")
    !########################################################################################################################################
@@ -863,7 +787,6 @@ do t=tstart,tfin
    ! 6.1 Compute rhs of Poisson equation div*ustar: divergence at the cell center 
    ! I've done the halo updates so to compute the divergence at the pencil border i have the *star from the halo
    call nvtxStartRange("compute RHS")
-
 
    !$acc kernels
    do k=1+halo_ext, piX%shape(3)-halo_ext
@@ -966,9 +889,7 @@ do t=tstart,tfin
    end do
 
 
-
    call nvtxStartRange("FFT backwards along x and y w/ transpositions")
-
    ! psi(z,kx,ky) -> psi(ky,z,kx)
    CHECK_CUDECOMP_EXIT(cudecompTransposeZToY(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX))
    ! psi(ky,z,kx) -> psi(y,z,kx)
@@ -992,22 +913,17 @@ do t=tstart,tfin
       end do
    end do
 
-      
    call nvtxEndRange
-
    ! update halo nodes with pressure 
    ! Update X-pencil halos 
    !$acc host_data use_device(p)
     CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, p, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
     CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, p, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
     !$acc end host_data 
-
    !########################################################################################################################################
    ! END STEP 7: POISSON SOLVER FOR PRESSURE
    !########################################################################################################################################
    call nvtxEndRange
-
-
 
 
    call nvtxStartRange("Correction")
