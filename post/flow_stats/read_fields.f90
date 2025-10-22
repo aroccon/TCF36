@@ -18,7 +18,6 @@ allocate(w(nx,ny,nz)) ! add nz+1 to account for staggered grid? the top layer is
 allocate(phi(nx,ny,nz))
 
 write(*,*) 'Reading step ',nstep,' out of ',nend,' , flow'
-if (uflag .eq. 1) then
   !reading u
   namefile=trim(namedir)//'u_'//numfile//'.dat'
   open(666,file=trim(namefile),form='unformatted',access='stream',status='old',convert='little_endian')
@@ -34,14 +33,6 @@ if (uflag .eq. 1) then
   open(668,file=trim(namefile),form='unformatted',access='stream',status='old',convert='little_endian')
   read(668) w
   close(668,status='keep')
-endif
-if (phiflag .eq. 1) then
-  !reading phi
-  namefile=trim(namedir)//'phi_'//numfile//'.dat'
-  open(668,file=trim(namefile),form='unformatted',access='stream',status='old',convert='little_endian')
-  read(668) phi
-  close(668,status='keep')
-endif
 
 
 ! interpolate w at the cell center (where u and v are also located)
