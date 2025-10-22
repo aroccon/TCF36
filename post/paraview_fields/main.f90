@@ -9,6 +9,12 @@ character(len=40) :: namefile
 !! read input
 open(10,file='input_par.inp',form='formatted')
 read(10,*) nx
+read(10,*) ny
+read(10,*) nz
+read(10,*) lx
+read(10,*) ly
+read(10,*) lz
+read(10,*) csi
 read(10,*) nstart
 read(10,*) nend
 read(10,*) dump
@@ -17,35 +23,28 @@ read(10,*) vflag
 read(10,*) wflag
 read(10,*) phiflag
 
-!! overide (if there are problems)
-!nstart=0
-!dump=200
-!nend=200
-!nx=64
-
-ny=nx
-nz=nx
 
 allocate(x(nx))
 allocate(y(ny))
 allocate(z(nz))
 
-dx=2*pi/(nx-1)
-dy=2*pi/(ny-1)
-dz=2*pi/(nz-1)
+dx=lx/dble(nx)
+dy=ly/dble(ny)
 
 x=0.0d0
 y=0.0d0
 z=0.0d0
 
+! creata x.y,z axis
 do i=1,nx-1
   x(i+1)=x(i)+dx
 enddo
 do j=1,ny-1
   y(j+1)=y(j)+dy
 enddo
-do k=1,nz-1
-  z(k+1)=z(k)+dz
+do k = 1, nz
+  zk=(dble(k)-0.5d0)/dble(nz)         
+  z(k) = 0.5d0*dble(lz)*(1.d0+tanh(csi*(zk-0.5d0))/tanh(0.5d0*csi))
 enddo
 
 ! read fluid data
