@@ -46,7 +46,7 @@ If you use this code, please cite the following work:
 - Passive scaler: Can be enabled or disabled. Default is single-phase.  
 
 ## Turbulent channel flow 
-- TCF at Rey_tau=600, Grid: 1536 x 768 x 576
+- TCF at Rey_tau=590, Grid: 1536 x 768 x 576
 
 ![Test](val/tcf2.png)
 
@@ -56,6 +56,8 @@ If you use this code, please cite the following work:
 - 512 x 256 x 384 - 15 ms/iter - 4 x A100 64 GB 
 - 1536 x 768 x 576 - 220 ms/iter - 4 x A100 64 GB 
 - 2048 x 768 x 576 - 323 ms/iter - 4 x A100 64 GB 
+- 2048 x 768 x 576 - 127 ms/iter - 16 x A100 64 GB 
+- 3456 x 1296 x 960 - 720 ms/iter - 16 x A100 64 GB
 
 ## Nodes numbering and staggered grid
 
