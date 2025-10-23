@@ -12,6 +12,7 @@ use param
 use mpivar
 use cudecompvar
 use nvtx
+use iso_c_binding
 
 
 implicit none
@@ -54,7 +55,7 @@ double precision, parameter :: beta(3)  = (/ 0.d0,       -17.d0/60.d0,  -5.d0/12
 !real(kind=8), parameter :: beta(3)   = (/ 0.0d0, -0.122243120495896d0, -0.377756879504104d0 /)
 
 ! Enable or disable phase field 
-#define phiflag 0
+#define phiflag 1
 ! Enable or disable temperature field
 #define thetaflag 0
 
@@ -67,7 +68,6 @@ double precision, parameter :: beta(3)  = (/ 0.d0,       -17.d0/60.d0,  -5.d0/12
 call mpi_init(ierr)
 call mpi_comm_rank(MPI_COMM_WORLD, rank, ierr)
 call mpi_comm_size(MPI_COMM_WORLD, ranks, ierr)
-
 call mpi_comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, 0, MPI_INFO_NULL, localComm, ierr)
 call mpi_comm_rank(localComm, localRank, ierr)
 ierr = cudaSetDevice(localRank) !assign GPU to MPI rank
@@ -99,7 +99,6 @@ config%transpose_comm_backend = comm_backend
 config%transpose_axis_contiguous = .true.
 ! for halo exchanges
 config%halo_comm_backend = CUDECOMP_HALO_COMM_MPI
-! Setting for periodic halos in all directions (non required to be in config)
 halo_periods = [.true., .true., .false.]
 ! create spectral grid descriptor first to select pdims for optimal transposes
 gdims = [nx/2+1, ny, nz]
@@ -111,9 +110,9 @@ if (comm_backend == 0) then
    options%autotune_transpose_backend = .true.
    options%autotune_halo_backend = .false.
 endif
-options%transpose_use_inplace_buffers = .true.
-options%transpose_input_halo_extents(:, 1) = halo
-options%transpose_output_halo_extents(:, 4) = halo
+options%transpose_use_inplace_buffers = .false.
+options%transpose_input_halo_extents(:, 1) = 0
+options%transpose_output_halo_extents(:, 4) = 0
 CHECK_CUDECOMP_EXIT(cudecompGridDescCreate(handle, grid_descD2Z, config, options))
 ! create physical grid descriptor
 ! take previous config and modify the global grid (nx instead of nx/2+1)
@@ -159,11 +158,12 @@ CHECK_CUDECOMP_EXIT(cudecompGetHaloWorkspaceSize(handle, grid_descD2Z, 1, halo, 
 ! Forward 1D FFT in X: D2Z
 batchSize = piX_d2z%shape(2)*piX_d2z%shape(3) !<- number of FFT (from x-pencil dimension)
 !status = cufftPlan1D(planXf, nx, CUFFT_D2Z, batchSize)
-status = cufftPlanMany(planXf,1,n,inembed,istride,idist,onembed,ostride,odist,CUFFT_D2Z, batchSize)
+status = cufftPlanMany(planXf,1,[nx],[nx+2],1,nx+2,[nx/2+1],1,nx/2+1,CUFFT_D2Z, batchSize)
 if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating X plan Forward'
 ! Backward 1D FFT in X: Z2D
 batchSize = piX_d2z%shape(2)*piX_d2z%shape(3) !<- number of FFT (from x-pencil dimension)
-status = cufftPlan1D(planXb, nx, CUFFT_Z2D, batchSize)
+!status = cufftPlan1D(planXb, nx, CUFFT_Z2D, batchSize)
+status = cufftPlanMany(planXb,1,[nx],[nx/2+1],1,nx/2+1,[nx+2],1,nx+2,CUFFT_Z2D, batchSize)
 if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating X plan Backward'
 ! it's always 2 and 3 because y-pencil have coordinates y,z,x
 batchSize = piY_d2z%shape(2)*piY_d2z%shape(3)
@@ -289,14 +289,17 @@ endif
 
 ! update halo cells along y and z directions (enough only if pr and pc are non-unitary)
 !$acc host_data use_device(u)
+CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, u, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 1))
 CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, u, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
 CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, u, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
 !$acc end host_data 
 !$acc host_data use_device(v)
+CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, v, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 1))
 CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, v, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
 CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, v, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
 !$acc end host_data 
 !$acc host_data use_device(w)
+CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, w, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 1))
 CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, w, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
 CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, w, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
 !$acc end host_data 
@@ -329,6 +332,7 @@ if (restart .eq. 1) then
 endif
 ! update halo
 !$acc host_data use_device(phi)
+CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, phi, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 1))
 CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, phi, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
 CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, phi, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
 !$acc end host_data 
@@ -359,6 +363,7 @@ if (restart .eq. 1) then
 endif
 ! update halo
 !$acc host_data use_device(theta)
+CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, theta, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 1))
 CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, theta, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
 CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, theta, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
 !$acc end host_data 
@@ -462,14 +467,17 @@ do t=tstart,tfin
 
    ! Update normx,normy and normz halos, required to then compute normal derivative
    !$acc host_data use_device(normx)
+   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, normx, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 1))
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, normx, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, normx, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
    !$acc host_data use_device(normy)
+   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, normy, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 1))
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, normy, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, normy, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
    !$acc host_data use_device(normz)
+   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, normz, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 1))
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, normz, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, normz, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
@@ -494,7 +502,7 @@ do t=tstart,tfin
    !$acc kernels
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
-         do i = 1+halo_ext, piX%shape(1)-halo_ext
+         do i=1+halo_ext, piX%shape(1)-halo_ext
                ip=i+1
                jp=j+1
                kp=k+1
@@ -517,13 +525,14 @@ do t=tstart,tfin
    !$acc kernels
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
-         do i = 1+halo_ext, piX%shape(1)-halo_ext
+         do i=1+halo_ext, piX%shape(1)-halo_ext
             phi(i,j,k) = phi(i,j,k) + dt*rhsphi(i,j,k)
          enddo
       enddo
    enddo
    !$acc end kernels
    !$acc host_data use_device(phi)
+   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, phi, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 1))
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, phi, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, phi, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
@@ -555,7 +564,7 @@ do t=tstart,tfin
       !$acc parallel loop tile(16,4,2) 
       do k=1+halo_ext, piX%shape(3)-halo_ext
          do j=1+halo_ext, piX%shape(2)-halo_ext
-            do i = 1+halo_ext, piX%shape(1)-halo_ext
+            do i=1+halo_ext, piX%shape(1)-halo_ext
                ip=i+1
                jp=j+1
                kp=k+1
@@ -602,7 +611,7 @@ do t=tstart,tfin
       !$acc parallel loop tile(16,4,2)
       do k=1+halo_ext, piX%shape(3)-halo_ext
          do j=1+halo_ext, piX%shape(2)-halo_ext
-            do i = 1+halo_ext, piX%shape(1)-halo_ext
+            do i=1+halo_ext, piX%shape(1)-halo_ext
                ip=i+1
                jp=j+1
                kp=k+1
@@ -627,7 +636,7 @@ do t=tstart,tfin
       !$acc parallel loop collapse(3)
       do k=1+halo_ext, piX%shape(3)-halo_ext
          do j=1+halo_ext, piX%shape(2)-halo_ext
-            do i = 1+halo_ext, piX%shape(1)-halo_ext
+            do i=1+halo_ext, piX%shape(1)-halo_ext
                theta(i,j,k) = theta(i,j,k) + dt*alpha(stage)*rhstheta(i,j,k) + dt*beta(stage)*rhstheta_o(i,j,k)
                rhstheta_o(i,j,k)=rhstheta(i,j,k)
             enddo
@@ -636,6 +645,7 @@ do t=tstart,tfin
 
       ! 5.3 update halos (y and z directions), required to then compute the RHS of Poisson equation because of staggered grid
       !$acc host_data use_device(theta)
+      CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, theta, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 1))
       CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, theta, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
       CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, theta, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
       !$acc end host_data 
@@ -647,7 +657,7 @@ do t=tstart,tfin
       !Obtain surface tension forces evaluated at the center of the cell (same as where phi is located)
       do k=1+halo_ext, piX%shape(3)-halo_ext
          do j=1+halo_ext, piX%shape(2)-halo_ext
-            do i = 1+halo_ext, piX%shape(1)-halo_ext
+            do i=1+halo_ext, piX%shape(1)-halo_ext
                ip=i+1
                jp=j+1
                kp=k+1
@@ -666,14 +676,17 @@ do t=tstart,tfin
 
       ! Update halo of fxst, fyst and fzst (required then to interpolate at velocity points)
       !$acc host_data use_device(fxst)
+      CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, fxst, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 1))
       CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, fxst, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
       CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, fxst, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
       !$acc end host_data 
       !$acc host_data use_device(fyst)
+      CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, fyst, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 1))
       CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, fyst, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
       CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, fyst, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
       !$acc end host_data 
       !$acc host_data use_device(fzst)
+      CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, fzst, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 1))
       CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, fzst, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
       CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, fzst, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
       !$acc end host_data 
@@ -682,7 +695,7 @@ do t=tstart,tfin
       !$acc kernels
       do k=1+halo_ext, piX%shape(3)-halo_ext
          do j=1+halo_ext, piX%shape(2)-halo_ext
-            do i = 1+halo_ext, piX%shape(1)-halo_ext
+            do i=1+halo_ext, piX%shape(1)-halo_ext
                im=i-1
                jm=j-1
                km=k-1
@@ -705,7 +718,7 @@ do t=tstart,tfin
       !$acc parallel loop collapse(3)
       do k=1+halo_ext, piX%shape(3)-halo_ext
          do j=1+halo_ext, piX%shape(2)-halo_ext
-            do i = 1+halo_ext, piX%shape(1)-halo_ext
+            do i=1+halo_ext, piX%shape(1)-halo_ext
                u(i,j,k) = u(i,j,k) + dt*alpha(stage)*rhsu(i,j,k) + dt*beta(stage)*rhsu_o(i,j,k)
                v(i,j,k) = v(i,j,k) + dt*alpha(stage)*rhsv(i,j,k) + dt*beta(stage)*rhsv_o(i,j,k)
                w(i,j,k) = w(i,j,k) + dt*alpha(stage)*rhsw(i,j,k) + dt*beta(stage)*rhsw_o(i,j,k)
@@ -720,14 +733,17 @@ do t=tstart,tfin
 
       ! 5.3 update halos (y and z directions), required to then compute the RHS of Poisson equation because of staggered grid
       !$acc host_data use_device(u)
+      CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, u, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 1))
       CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, u, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
       CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, u, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
       !$acc end host_data 
       !$acc host_data use_device(v)
+      CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, v, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 1))
       CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, v, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
       CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, v, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
       !$acc end host_data 
       !$acc host_data use_device(w)
+      CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, w, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 1))
       CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, w, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
       CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, w, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
       !$acc end host_data 
@@ -737,7 +753,7 @@ do t=tstart,tfin
       !$acc parallel loop collapse(3)
       do k=1, piX%shape(3)
          do j=1, piX%shape(2)
-            do i = 1+halo_ext, piX%shape(1)-halo_ext
+            do i=1, piX%shape(1)
                kg = piX%lo(3) + k - 1 - halo_ext                   
                if (kg .eq. 1)    theta(i,j,k-1) =  2.d0*( 1.d0) - theta(i,j,k)     ! mean value between kg and kg-1 (top wall) equal to 1 
                if (kg .eq. nz)   theta(i,j,k+1) =  2.d0*(-1.d0) - theta(i,j,k)     ! mean value between kg and kg+1 (bottom wall) equal to -1 
@@ -752,7 +768,7 @@ do t=tstart,tfin
       !$acc parallel loop collapse(3)
       do k=1, piX%shape(3)
          do j=1, piX%shape(2)
-            do i = 1+halo_ext, piX%shape(1)-halo_ext
+            do i=1, piX%shape(1)
                kg = piX%lo(3) + k - 1 -halo_ext            
                ! bottom wall 
                if (kg .eq. 1)    u(i,j,k-1)=  -u(i,j,k)  !  mean value between kg and kg-1 (wall) equal to zero  
@@ -783,7 +799,7 @@ do t=tstart,tfin
    !$acc kernels
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
-         do i = 1+halo_ext, piX%shape(1)-halo_ext
+         do i=1+halo_ext, piX%shape(1)-halo_ext
             ip=i+1
             jp=j+1
             kp=k+1
@@ -794,15 +810,15 @@ do t=tstart,tfin
          enddo
       enddo
    enddo
-   rhspp=rhsp(2:nx+1,:,:)
    !$acc end kernels
    call nvtxEndRange
 
 
+
    call nvtxStartRange("FFT forward w/ transpositions")
 
-   !$acc host_data use_device(rhspp)
-   status = cufftExecD2Z(planXf, rhspp, psi_d)
+   !$acc host_data use_device(rhsp)
+   status = cufftExecD2Z(planXf, c_loc(rhsp(2,1,1)), psi_d)
    if (status /= CUFFT_SUCCESS) write(*,*) 'X forward error: ', status
    !$acc end host_data
    ! psi(kx,y,z) -> psi(y,z,kx)
@@ -889,26 +905,30 @@ do t=tstart,tfin
    if (status /= CUFFT_SUCCESS) write(*,*) 'Y inverse error: ', status
    ! psi(y,z,kx) -> psi(kx,y,z)
    CHECK_CUDECOMP_EXIT(cudecompTransposeYToX(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX,[0,0,0], piX_d2z%halo_extents))
-   !$acc host_data use_device(pp)
+   !$acc host_data use_device(p)
    ! psi(kx,y,z) -> p(x,y,z)
-   status = cufftExecZ2D(planXb, psi_d, pp)
+   status = cufftExecZ2D(planXb, psi_d, p)
    if (status /= CUFFT_SUCCESS) write(*,*) 'X inverse error: ', status
    !$acc end host_data
 
    ! normalize pressure (must be done here, not in the TDMA)
-   !$acc parallel loop collapse(3)
+   !$acc kernels
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
-         do i = 1+halo_ext, piX%shape(1)-halo_ext
-            p(i,j,k) = pp(i,j,k)/nx/ny
+         do i=1+halo_ext, piX%shape(1)-halo_ext
+            p(i,j,k) = p(i,j,k)/nx/ny
          end do
       end do
    end do
+   !$acc end kernels
+
+
 
    call nvtxEndRange
    ! update halo nodes with pressure 
    ! Update X-pencil halos 
    !$acc host_data use_device(p)
+    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, p, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 1))
     CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, p, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
     CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, p, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
     !$acc end host_data 
@@ -928,7 +948,7 @@ do t=tstart,tfin
    !$acc kernels 
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
-         do i = 1+halo_ext, piX%shape(1)-halo_ext
+         do i=1+halo_ext, piX%shape(1)-halo_ext
               im=i-1
               jm=j-1
               km=k-1
@@ -943,14 +963,17 @@ do t=tstart,tfin
 
    ! 8.3 update halos (y direction), required to then compute the RHS of Poisson equation because of staggered grid
    !$acc host_data use_device(u)
+   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, u, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 1))
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, u, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, u, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
    !$acc host_data use_device(v)
+   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, v, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 1))
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, v, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, v, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
    !$acc host_data use_device(w)
+   CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, w, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 1))
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, w, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, w, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
@@ -964,7 +987,7 @@ do t=tstart,tfin
    !$acc parallel loop collapse(3) reduction(max:umax,vmax,wmax)
    do k=1, piX%shape(3)
       do j=1, piX%shape(2)
-         do i = 1+halo_ext, piX%shape(1)-halo_ext
+         do i=1, piX%shape(1)
             kg = piX%lo(3) + k - 1 - halo_ext                   
             ! bottom wall 
             if (kg .eq. 1)    u(i,j,k-1) =  -u(i,j,k)  !  mean value between kg and kg-1 (wall) equal to zero  

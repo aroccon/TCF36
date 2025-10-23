@@ -27,7 +27,7 @@ double precision, allocatable :: out(:,:,:)
 
 ! define basic quantities to be used later (gloabl and pencil size)
 g_size=[nx, ny, nz] ! global size
-p_size=[piX%shape(1), piX%shape(2)-2*halo_ext, piX%shape(3)-2*halo_ext] !<- pencil has no halo along x
+p_size=[piX%shape(1)-2*halo_ext, piX%shape(2)-2*halo_ext, piX%shape(3)-2*halo_ext] !<- pencil has no halo along x
 fstart=[piX%lo(1)-1,piX%lo(2)-1,piX%lo(3)-1]
 ! for debug
 !write(*,*) "g_size", g_size
@@ -38,7 +38,7 @@ allocate(out(p_size(1),p_size(2),p_size(3))) !<- halo removed
 !write(*,*) "in readwrite"
 
 if (fieldn .eq. 1) then
-  out=u(1:nx,1+halo_ext:piX%shape(2)-halo_ext,1+halo_ext:piX%shape(3)-halo_ext) !<- out only the inner parts (no halo)
+  out=u(1+halo_ext:piX%shape(1)-halo_ext,1+halo_ext:piX%shape(2)-halo_ext,1+halo_ext:piX%shape(3)-halo_ext) !<- out only the inner parts (no halo)
   write(namefile,'(a,i8.8,a)') './output/u_',t,'.dat'
   call mpi_file_open(MPI_COMM_WORLD,namefile,mpi_mode_create+mpi_mode_rdwr,mpi_info_null,f_handle,ierr)
   call mpi_type_create_subarray(3,g_size,p_size,fstart,mpi_order_fortran,mpi_double_precision,ftype,ierr)
@@ -49,7 +49,7 @@ if (fieldn .eq. 1) then
 endif
 
 if (fieldn .eq. 2) then
-  out=v(1:nx,1+halo_ext:piX%shape(2)-halo_ext,1+halo_ext:piX%shape(3)-halo_ext) !<- out only the inner parts (no halo)
+  out=v(1+halo_ext:piX%shape(1)-halo_ext,1+halo_ext:piX%shape(2)-halo_ext,1+halo_ext:piX%shape(3)-halo_ext) !<- out only the inner parts (no halo)
   write(namefile,'(a,i8.8,a)') './output/v_',t,'.dat'
   call mpi_file_open(MPI_COMM_WORLD,namefile,mpi_mode_create+mpi_mode_rdwr,mpi_info_null,f_handle,ierr)
   call mpi_type_create_subarray(3,g_size,p_size,fstart,mpi_order_fortran,mpi_double_precision,ftype,ierr)
@@ -60,7 +60,7 @@ if (fieldn .eq. 2) then
 endif
 
 if (fieldn .eq. 3) then
-  out=w(1:nx,1+halo_ext:piX%shape(2)-halo_ext,1+halo_ext:piX%shape(3)-halo_ext) !<- out only the inner parts (no halo)
+  out=w(1+halo_ext:piX%shape(1)-halo_ext,1+halo_ext:piX%shape(2)-halo_ext,1+halo_ext:piX%shape(3)-halo_ext) !<- out only the inner parts (no halo)
   write(namefile,'(a,i8.8,a)') './output/w_',t,'.dat'
   call mpi_file_open(MPI_COMM_WORLD,namefile,mpi_mode_create+mpi_mode_rdwr,mpi_info_null,f_handle,ierr)
   call mpi_type_create_subarray(3,g_size,p_size,fstart,mpi_order_fortran,mpi_double_precision,ftype,ierr)
@@ -71,7 +71,7 @@ if (fieldn .eq. 3) then
 endif
 
 if (fieldn .eq. 4) then
-  out=p(1:nx,1+halo_ext:piX%shape(2)-halo_ext,1+halo_ext:piX%shape(3)-halo_ext) !<- out only the inner parts (no halo)
+  out=p(1+halo_ext:piX%shape(1)-halo_ext,1+halo_ext:piX%shape(2)-halo_ext,1+halo_ext:piX%shape(3)-halo_ext) !<- out only the inner parts (no halo)
   write(namefile,'(a,i8.8,a)') './output/p_',t,'.dat'
   call mpi_file_open(MPI_COMM_WORLD,namefile,mpi_mode_create+mpi_mode_rdwr,mpi_info_null,f_handle,ierr)
   call mpi_type_create_subarray(3,g_size,p_size,fstart,mpi_order_fortran,mpi_double_precision,ftype,ierr)
@@ -82,7 +82,7 @@ if (fieldn .eq. 4) then
 endif
 
 if (fieldn .eq. 5) then
-  out=phi(1:nx,1+halo_ext:piX%shape(2)-halo_ext,1+halo_ext:piX%shape(3)-halo_ext) !<- out only the inner parts (no halo)
+  out=phi(1+halo_ext:piX%shape(1)-halo_ext,1+halo_ext:piX%shape(2)-halo_ext,1+halo_ext:piX%shape(3)-halo_ext) !<- out only the inner parts (no halo)
   write(namefile,'(a,i8.8,a)') './output/phi_',t,'.dat'
   call mpi_file_open(MPI_COMM_WORLD,namefile,mpi_mode_create+mpi_mode_rdwr,mpi_info_null,f_handle,ierr)
   call mpi_type_create_subarray(3,g_size,p_size,fstart,mpi_order_fortran,mpi_double_precision,ftype,ierr)
@@ -93,7 +93,7 @@ if (fieldn .eq. 5) then
 endif
 
 if (fieldn .eq. 6) then
-  out=theta(1:nx,1+halo_ext:piX%shape(2)-halo_ext,1+halo_ext:piX%shape(3)-halo_ext) !<- out only the inner parts (no halo)
+  out=rhsp(1+halo_ext:piX%shape(1)-halo_ext,1+halo_ext:piX%shape(2)-halo_ext,1+halo_ext:piX%shape(3)-halo_ext) !<- out only the inner parts (no halo)
   write(namefile,'(a,i8.8,a)') './output/theta_',t,'.dat'
   call mpi_file_open(MPI_COMM_WORLD,namefile,mpi_mode_create+mpi_mode_rdwr,mpi_info_null,f_handle,ierr)
   call mpi_type_create_subarray(3,g_size,p_size,fstart,mpi_order_fortran,mpi_double_precision,ftype,ierr)
@@ -145,7 +145,7 @@ double precision, allocatable :: in(:,:,:)
 
 ! define basic quantities to be used later (gloabl and pencil size)
 g_size=[nx, ny, nz] ! global size
-p_size=[piX%shape(1), piX%shape(2)-2*halo_ext, piX%shape(3)-2*halo_ext] !<- pencil has no halo along x
+p_size=[piX%shape(1)-2*halo_ext, piX%shape(2)-2*halo_ext, piX%shape(3)-2*halo_ext] !<- pencil has no halo along x
 fstart=[piX%lo(1)-1,piX%lo(2)-1,piX%lo(3)-1] !<- MPI is in C and index start from 0 (not 1)
 ! for debug
 !write(*,*) "g_size", g_size
@@ -269,7 +269,7 @@ double precision, allocatable :: in(:,:,:)
 
 ! define basic quantities to be used later (gloabl and pencil size)
 g_size=[nx, ny, nz] ! global size
-p_size=[piX%shape(1), piX%shape(2)-2*halo_ext, piX%shape(3)-2*halo_ext] !<- pencil has no halo along x
+p_size=[piX%shape(1)-2*halo_ext, piX%shape(2)-2*halo_ext, piX%shape(3)-2*halo_ext] !<- pencil has no halo along x
 fstart=[piX%lo(1)-1,piX%lo(2)-1,piX%lo(3)-1] !<- MPI is in C and index start from 0 (not 1)
 ! for debug
 !write(*,*) "g_size", g_size
