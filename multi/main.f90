@@ -93,7 +93,7 @@ pdims = [pr, pc] !pr and pc are the number of pencil along the different directi
 config%pdims = pdims
 ! gdims = [nx, ny, nz]
 ! config%gdims = gdims
-halo = [0, halo_ext, halo_ext] ! no halo along x neeed because is periodic and in physical space i have x-pencil
+halo = [halo_ext, halo_ext, halo_ext] ! no halo along x neeed because is periodic and in physical space i have x-pencil
 ! for transpositions
 config%transpose_comm_backend = comm_backend
 config%transpose_axis_contiguous = .true.
@@ -158,7 +158,8 @@ CHECK_CUDECOMP_EXIT(cudecompGetHaloWorkspaceSize(handle, grid_descD2Z, 1, halo, 
 ! CUFFT initialization -- Create Plans (along x anf y only, z not required)
 ! Forward 1D FFT in X: D2Z
 batchSize = piX_d2z%shape(2)*piX_d2z%shape(3) !<- number of FFT (from x-pencil dimension)
-status = cufftPlan1D(planXf, nx, CUFFT_D2Z, batchSize)
+!status = cufftPlan1D(planXf, nx, CUFFT_D2Z, batchSize)
+status = cufftPlanMany(planXf,1,n,inembed,istride,idist,onembed,ostride,odist,CUFFT_D2Z, batchSize)
 if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating X plan Forward'
 ! Backward 1D FFT in X: Z2D
 batchSize = piX_d2z%shape(2)*piX_d2z%shape(3) !<- number of FFT (from x-pencil dimension)
@@ -189,6 +190,8 @@ allocate(vel_d(max(nElemX, nElemY, nElemZ))) !for implicit diffusion
 #endif
 ! Pressure variable
 allocate(rhsp(piX%shape(1), piX%shape(2), piX%shape(3))) 
+allocate(rhspp(nx, piX%shape(2), piX%shape(3))) 
+allocate(pp(nx, piX%shape(2), piX%shape(3))) 
 allocate(p(piX%shape(1), piX%shape(2), piX%shape(3))) 
 !allocate variables
 !NS variables
@@ -241,7 +244,7 @@ if (rank.eq.0) write(*,*) "Initialize velocity field (fresh start)"
       if (rank.eq.0) write(*,*) "Initialize zero velocity field"
       do k = 1+halo_ext, piX%shape(3)-halo_ext
          do j = 1+halo_ext, piX%shape(2)-halo_ext
-            do i = 1, piX%shape(1)
+            do i = 1+halo_ext, piX%shape(1)-halo_ext
                u(i,j,k) =  0.0d0
                v(i,j,k) =  0.0d0 
                w(i,j,k) =  0.0d0 
@@ -255,7 +258,7 @@ if (rank.eq.0) write(*,*) "Initialize velocity field (fresh start)"
          kg = piX%lo(3) + k - 1 - halo_ext                   
          do j = 1+halo_ext, piX%shape(2)-halo_ext
             jg = piX%lo(2) + j - 1 - halo_ext
-            do i = 1, piX%shape(1)
+            do i = 1+halo_ext, piX%shape(1)-halo_ext
                amp=3.d0
                mx=3.03d0
                my=2.02d0
@@ -308,7 +311,7 @@ if (rank.eq.0) write(*,*) 'Initialize phase field (fresh start)'
       kg = piX%lo(3) + k - 1 - halo_ext
          do j = 1+halo_ext, piX%shape(2)-halo_ext
          jg = piX%lo(2) + j - 1 - halo_ext
-            do i = 1, piX%shape(1)
+            do i = 1+halo_ext, piX%shape(1)-halo_ext
                 pos=(x(i)-lx/2)**2d0 +  (y(jg)-ly/2)**2d0 + (z(kg)-lz/2)**2d0
                 phi(i,j,k) = 0.5d0*(1.d0-tanh((sqrt(pos)-radius)/2/eps))
             enddo
@@ -339,7 +342,7 @@ if (rank.eq.0) write(*,*) 'Initialize temperature field (fresh start)'
    if (rank.eq.0) write(*,*) 'Uniform temperature field'
       do k = 1+halo_ext, piX%shape(3)-halo_ext
          do j = 1+halo_ext, piX%shape(2)-halo_ext
-            do i = 1, piX%shape(1)
+            do i = 1+halo_ext, piX%shape(1)-halo_ext
                theta(i,j,k) = 0.0d0  ! uniform temperature
             enddo
          enddo
@@ -417,7 +420,7 @@ do t=tstart,tfin
    !$acc kernels
    do k=1, piX%shape(3)
       do j=1, piX%shape(2)
-         do i=1,nx
+         do i = 1, piX%shape(1)
             ! compute distance function psi (used to compute normals)
             val = min(phi(i,j,k),1.0d0) ! avoid machine precision overshoots in phi that leads to problem with log
             psidi(i,j,k) = eps*log((val+enum)/(1.d0-val+enum))
@@ -432,7 +435,7 @@ do t=tstart,tfin
    !$acc parallel loop tile(16,4,2)
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
-         do i=1,nx
+         do i = 1+halo_ext, piX%shape(1)-halo_ext
             ! 4.1 RHS computation
             ip=i+1
             jp=j+1
@@ -441,8 +444,6 @@ do t=tstart,tfin
             jm=j-1
             km=k-1
             kg=piX%lo(3) + k - 1 - halo_ext
-            if (ip .gt. nx) ip=1
-            if (im .lt. 1) im=nx
             ! convective (first three lines) and diffusive (last three lines)
             rhsphi(i,j,k) =   &
                   - (u(ip,j,k)*0.5d0*(phi(ip,j,k)+phi(i,j,k)) - u(i,j,k)*0.5d0*(phi(i,j,k)+phi(im,j,k)))*dxi   &  
@@ -478,7 +479,7 @@ do t=tstart,tfin
    !$acc kernels
    do k=1, piX%shape(3)
       do j=1, piX%shape(2)
-         do i=1,nx
+         do i=1,piX%shape(1)
             normod = 1.d0/(sqrt(normx(i,j,k)*normx(i,j,k) + normy(i,j,k)*normy(i,j,k) + normz(i,j,k)*normz(i,j,k)) + 1.0E-16)
             ! normod = 1.d0/(sqrt(normx(i,j,k)**2d0 + normy(i,j,k)**2d0 + normz(i,j,k)**2d0) + 1.0E-16)
             normx(i,j,k) = normx(i,j,k)*normod
@@ -493,7 +494,7 @@ do t=tstart,tfin
    !$acc kernels
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
-            do i=1,nx
+         do i = 1+halo_ext, piX%shape(1)-halo_ext
                ip=i+1
                jp=j+1
                kp=k+1
@@ -501,8 +502,6 @@ do t=tstart,tfin
                jm=j-1
                km=k-1
                kg=piX%lo(3) + k - 1 - halo_ext
-               if (ip .gt. nx) ip=1
-               if (im .lt. 1) im=nx
                rhsphi(i,j,k)=rhsphi(i,j,k)-gamma*((0.25d0*(1.d0-tanh_psi(ip,j,k)*tanh_psi(ip,j,k))*normx(ip,j,k) - &
                                                       0.25d0*(1.d0-tanh_psi(im,j,k)*tanh_psi(im,j,k))*normx(im,j,k))*0.5*dxi + &
                                                      (0.25d0*(1.d0-tanh_psi(i,jp,k)*tanh_psi(i,jp,k))*normy(i,jp,k) - &
@@ -518,7 +517,7 @@ do t=tstart,tfin
    !$acc kernels
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
-         do i=1,nx
+         do i = 1+halo_ext, piX%shape(1)-halo_ext
             phi(i,j,k) = phi(i,j,k) + dt*rhsphi(i,j,k)
          enddo
       enddo
@@ -556,7 +555,7 @@ do t=tstart,tfin
       !$acc parallel loop tile(16,4,2) 
       do k=1+halo_ext, piX%shape(3)-halo_ext
          do j=1+halo_ext, piX%shape(2)-halo_ext
-            do i=1,nx
+            do i = 1+halo_ext, piX%shape(1)-halo_ext
                ip=i+1
                jp=j+1
                kp=k+1
@@ -564,8 +563,6 @@ do t=tstart,tfin
                jm=j-1
                km=k-1
                kg=piX%lo(3) + k - 1 - halo_ext
-               if (ip .gt. nx) ip=1  
-               if (im .lt. 1) im=nx
                !  compute the products (conservative form)
                h11 = 0.25d0*((u(ip,j,k)+u(i,j,k))*(u(ip,j,k)+u(i,j,k))     - (u(i,j,k)+u(im,j,k))*(u(i,j,k)+u(im,j,k)))*dxi
                h12 = 0.25d0*((u(i,jp,k)+u(i,j,k))*(v(i,jp,k)+v(im,jp,k))   - (u(i,j,k)+u(i,jm,k))*(v(i,j,k)+v(im,j,k)))*dyi
@@ -605,7 +602,7 @@ do t=tstart,tfin
       !$acc parallel loop tile(16,4,2)
       do k=1+halo_ext, piX%shape(3)-halo_ext
          do j=1+halo_ext, piX%shape(2)-halo_ext
-            do i=1,nx
+            do i = 1+halo_ext, piX%shape(1)-halo_ext
                ip=i+1
                jp=j+1
                kp=k+1
@@ -613,8 +610,6 @@ do t=tstart,tfin
                jm=j-1
                km=k-1
                kg=piX%lo(3) + k - 1 - halo_ext
-               if (ip .gt. nx) ip=1
-               if (im .lt. 1) im=nx
                ! convective terms
                rhstheta(i,j,k) = &
                      - (u(ip,j,k)*0.5d0*(theta(ip,j,k)+theta(i,j,k)) - u(i,j,k)*0.5d0*(theta(i,j,k)+theta(im,j,k)))*dxi &
@@ -632,7 +627,7 @@ do t=tstart,tfin
       !$acc parallel loop collapse(3)
       do k=1+halo_ext, piX%shape(3)-halo_ext
          do j=1+halo_ext, piX%shape(2)-halo_ext
-            do i=1,nx
+            do i = 1+halo_ext, piX%shape(1)-halo_ext
                theta(i,j,k) = theta(i,j,k) + dt*alpha(stage)*rhstheta(i,j,k) + dt*beta(stage)*rhstheta_o(i,j,k)
                rhstheta_o(i,j,k)=rhstheta(i,j,k)
             enddo
@@ -652,7 +647,7 @@ do t=tstart,tfin
       !Obtain surface tension forces evaluated at the center of the cell (same as where phi is located)
       do k=1+halo_ext, piX%shape(3)-halo_ext
          do j=1+halo_ext, piX%shape(2)-halo_ext
-            do i=1,nx
+            do i = 1+halo_ext, piX%shape(1)-halo_ext
                ip=i+1
                jp=j+1
                kp=k+1
@@ -660,8 +655,6 @@ do t=tstart,tfin
                jm=j-1
                km=k-1
                kg=piX%lo(3) + k - 1 - halo_ext
-               if (ip .gt. nx) ip=1
-               if (im .lt. 1) im=nx
                curv=0.5d0*(normx(ip,j,k)-normx(im,j,k))*dxi + 0.5d0*(normy(i,jp,k)-normy(i,jm,k))*dyi + (normz(i,j,kp)-normz(i,j,km))/(z(kg+1)-z(kg-1))
                fxst(i,j,k)= -sigma*curv*0.5d0*(phi(ip,j,k)-phi(im,j,k))*dxi
                fyst(i,j,k)= -sigma*curv*0.5d0*(phi(i,jp,k)-phi(i,jm,k))*dyi
@@ -689,11 +682,10 @@ do t=tstart,tfin
       !$acc kernels
       do k=1+halo_ext, piX%shape(3)-halo_ext
          do j=1+halo_ext, piX%shape(2)-halo_ext
-            do i=1,nx
+            do i = 1+halo_ext, piX%shape(1)-halo_ext
                im=i-1
                jm=j-1
                km=k-1
-               if (im .lt. 1) im=nx
                rhsu(i,j,k)=rhsu(i,j,k) + 0.5d0*(fxst(im,j,k)+fxst(i,j,k))*rhoi
                rhsv(i,j,k)=rhsv(i,j,k) + 0.5d0*(fyst(i,jm,k)+fyst(i,j,k))*rhoi
                rhsw(i,j,k)=rhsw(i,j,k) + 0.5d0*(fzst(i,j,km)+fzst(i,j,k))*rhoi
@@ -713,7 +705,7 @@ do t=tstart,tfin
       !$acc parallel loop collapse(3)
       do k=1+halo_ext, piX%shape(3)-halo_ext
          do j=1+halo_ext, piX%shape(2)-halo_ext
-            do i=1,nx
+            do i = 1+halo_ext, piX%shape(1)-halo_ext
                u(i,j,k) = u(i,j,k) + dt*alpha(stage)*rhsu(i,j,k) + dt*beta(stage)*rhsu_o(i,j,k)
                v(i,j,k) = v(i,j,k) + dt*alpha(stage)*rhsv(i,j,k) + dt*beta(stage)*rhsv_o(i,j,k)
                w(i,j,k) = w(i,j,k) + dt*alpha(stage)*rhsw(i,j,k) + dt*beta(stage)*rhsw_o(i,j,k)
@@ -745,7 +737,7 @@ do t=tstart,tfin
       !$acc parallel loop collapse(3)
       do k=1, piX%shape(3)
          do j=1, piX%shape(2)
-            do i=1,nx
+            do i = 1+halo_ext, piX%shape(1)-halo_ext
                kg = piX%lo(3) + k - 1 - halo_ext                   
                if (kg .eq. 1)    theta(i,j,k-1) =  2.d0*( 1.d0) - theta(i,j,k)     ! mean value between kg and kg-1 (top wall) equal to 1 
                if (kg .eq. nz)   theta(i,j,k+1) =  2.d0*(-1.d0) - theta(i,j,k)     ! mean value between kg and kg+1 (bottom wall) equal to -1 
@@ -760,7 +752,7 @@ do t=tstart,tfin
       !$acc parallel loop collapse(3)
       do k=1, piX%shape(3)
          do j=1, piX%shape(2)
-            do i=1,nx
+            do i = 1+halo_ext, piX%shape(1)-halo_ext
                kg = piX%lo(3) + k - 1 -halo_ext            
                ! bottom wall 
                if (kg .eq. 1)    u(i,j,k-1)=  -u(i,j,k)  !  mean value between kg and kg-1 (wall) equal to zero  
@@ -791,26 +783,26 @@ do t=tstart,tfin
    !$acc kernels
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
-         do i=1,nx
+         do i = 1+halo_ext, piX%shape(1)-halo_ext
             ip=i+1
             jp=j+1
             kp=k+1
             kg = piX%lo(3)  + k - 1 - halo_ext
-            if (ip > nx) ip=1
             rhsp(i,j,k) =                    (rho*dxi/dt)*(u(ip,j,k)-u(i,j,k))
             rhsp(i,j,k) = rhsp(i,j,k) +      (rho*dyi/dt)*(v(i,jp,k)-v(i,j,k))
             rhsp(i,j,k) = rhsp(i,j,k) + (rho*dzci(kg)/dt)*(w(i,j,kp)-w(i,j,k))
          enddo
       enddo
    enddo
+   rhspp=rhsp(2:nx+1,:,:)
    !$acc end kernels
    call nvtxEndRange
 
 
    call nvtxStartRange("FFT forward w/ transpositions")
 
-   !$acc host_data use_device(rhsp)
-   status = cufftExecD2Z(planXf, rhsp, psi_d)
+   !$acc host_data use_device(rhspp)
+   status = cufftExecD2Z(planXf, rhspp, psi_d)
    if (status /= CUFFT_SUCCESS) write(*,*) 'X forward error: ', status
    !$acc end host_data
    ! psi(kx,y,z) -> psi(y,z,kx)
@@ -897,9 +889,9 @@ do t=tstart,tfin
    if (status /= CUFFT_SUCCESS) write(*,*) 'Y inverse error: ', status
    ! psi(y,z,kx) -> psi(kx,y,z)
    CHECK_CUDECOMP_EXIT(cudecompTransposeYToX(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX,[0,0,0], piX_d2z%halo_extents))
-   !$acc host_data use_device(p)
+   !$acc host_data use_device(pp)
    ! psi(kx,y,z) -> p(x,y,z)
-   status = cufftExecZ2D(planXb, psi_d, p)
+   status = cufftExecZ2D(planXb, psi_d, pp)
    if (status /= CUFFT_SUCCESS) write(*,*) 'X inverse error: ', status
    !$acc end host_data
 
@@ -907,8 +899,8 @@ do t=tstart,tfin
    !$acc parallel loop collapse(3)
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
-         do i=1,nx
-            p(i,j,k) = p(i,j,k)/nx/ny
+         do i = 1+halo_ext, piX%shape(1)-halo_ext
+            p(i,j,k) = pp(i,j,k)/nx/ny
          end do
       end do
    end do
@@ -936,12 +928,11 @@ do t=tstart,tfin
    !$acc kernels 
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
-         do i = 1, piX%shape(1) ! equal to nx (no halo on x)
+         do i = 1+halo_ext, piX%shape(1)-halo_ext
               im=i-1
               jm=j-1
               km=k-1
               kg=piX%lo(3)  + k - 1 - halo_ext
-              if (im < 1) im=nx
               u(i,j,k)=u(i,j,k) - dt/rho*(p(i,j,k)-p(im,j,k))*dxi
               v(i,j,k)=v(i,j,k) - dt/rho*(p(i,j,k)-p(i,jm,k))*dyi
               w(i,j,k)=w(i,j,k) - dt/rho*(p(i,j,k)-p(i,j,km))*dzi(kg)
@@ -973,7 +964,7 @@ do t=tstart,tfin
    !$acc parallel loop collapse(3) reduction(max:umax,vmax,wmax)
    do k=1, piX%shape(3)
       do j=1, piX%shape(2)
-         do i=1,nx
+         do i = 1+halo_ext, piX%shape(1)-halo_ext
             kg = piX%lo(3) + k - 1 - halo_ext                   
             ! bottom wall 
             if (kg .eq. 1)    u(i,j,k-1) =  -u(i,j,k)  !  mean value between kg and kg-1 (wall) equal to zero  
