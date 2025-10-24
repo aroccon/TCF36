@@ -55,7 +55,7 @@ double precision, parameter :: beta(3)  = (/ 0.d0,       -17.d0/60.d0,  -5.d0/12
 !real(kind=8), parameter :: beta(3)   = (/ 0.0d0, -0.122243120495896d0, -0.377756879504104d0 /)
 
 ! Enable or disable phase field 
-#define phiflag 1
+#define phiflag 0
 ! Enable or disable temperature field
 #define thetaflag 0
 
@@ -190,8 +190,9 @@ allocate(vel_d(max(nElemX, nElemY, nElemZ))) !for implicit diffusion
 #endif
 ! Pressure variable
 allocate(rhsp(piX%shape(1), piX%shape(2), piX%shape(3))) 
-allocate(rhspp(nx, piX%shape(2), piX%shape(3))) 
-allocate(pp(nx, piX%shape(2), piX%shape(3))) 
+!allocate(rhspp(nx, piX%shape(2), piX%shape(3))) 
+!allocate(pp(nx, piX%shape(2), piX%shape(3))) 
+allocate(aux(nx, piX%shape(2), piX%shape(3)))
 allocate(p(piX%shape(1), piX%shape(2), piX%shape(3))) 
 !allocate variables
 !NS variables
@@ -807,19 +808,19 @@ do t=tstart,tfin
             rhsp(i,j,k) =                    (rho*dxi/dt)*(u(ip,j,k)-u(i,j,k))
             rhsp(i,j,k) = rhsp(i,j,k) +      (rho*dyi/dt)*(v(i,jp,k)-v(i,j,k))
             rhsp(i,j,k) = rhsp(i,j,k) + (rho*dzci(kg)/dt)*(w(i,j,kp)-w(i,j,k))
-            rhspp(i-halo_ext,j,k)=rhsp(i,j,k)
+            aux(i-halo_ext,j,k)=rhsp(i,j,k)
          enddo
       enddo
    enddo
    !$acc end kernels
    call nvtxEndRange
 
-   call writefield(t,6)
+   !call writefield(t,6)
 
    call nvtxStartRange("FFT forward w/ transpositions")
 
-   !$acc host_data use_device(rhspp)
-   status = cufftExecD2Z(planXf, rhspp, psi_d)
+   !$acc host_data use_device(aux)
+   status = cufftExecD2Z(planXf, aux, psi_d)
    if (status /= CUFFT_SUCCESS) write(*,*) 'X forward error: ', status
    !$acc end host_data
    ! psi(kx,y,z) -> psi(y,z,kx)
@@ -907,8 +908,8 @@ do t=tstart,tfin
    ! psi(y,z,kx) -> psi(kx,y,z)
    CHECK_CUDECOMP_EXIT(cudecompTransposeYToX(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX,[0,0,0], piX_d2z%halo_extents))
    ! psi(kx,y,z) -> p(x,y,z)
-   !$acc host_data use_device(pp)
-   status = cufftExecZ2D(planXb, psi_d, pp)
+   !$acc host_data use_device(aux)
+   status = cufftExecZ2D(planXb, psi_d, aux)
    if (status /= CUFFT_SUCCESS) write(*,*) 'X inverse error: ', status
    !$acc end host_data
 
@@ -917,7 +918,7 @@ do t=tstart,tfin
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1+halo_ext, piX%shape(1)-halo_ext
-            p(i+halo_ext,j,k) = pp(i,j,k)/nx/ny
+            p(i+halo_ext,j,k) = aux(i,j,k)/nx/ny
          end do
       end do
    end do

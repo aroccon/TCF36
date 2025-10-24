@@ -1,7 +1,7 @@
 module param
-    integer, parameter :: nx=128
-    integer, parameter :: ny=64
-    integer, parameter :: nz=50
+    integer, parameter :: nx=512
+    integer, parameter :: ny=256
+    integer, parameter :: nz=384
     double precision :: pi, rhoi, twopi
     double precision :: lx, dx, dxi, ddxi 
     double precision :: ly, dy, dyi, ddyi
@@ -54,7 +54,7 @@ module velocity
    complex(8), allocatable :: rhsp_complex(:,:,:)
    double precision, allocatable :: rhsp(:,:,:), p(:,:,:)
    double precision, allocatable :: rhspp(:,:,:), pp(:,:,:)
-   double precision, allocatable :: div(:,:,:)
+   double precision, allocatable :: div(:,:,:), aux(:,:,:)
    double precision :: uc, vc, wc, umax, vmax, wmax, gumax, gvmax, gwmax, cou
    double precision :: h11, h12, h13, h21, h22, h23, h31, h32, h33
    double precision, allocatable :: mysin(:), mycos(:)
