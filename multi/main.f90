@@ -92,7 +92,6 @@ CHECK_CUDECOMP_EXIT(cudecompGridDescConfigSetDefaults(config))
 pdims = [pr, pc] !pr and pc are the number of pencil along the different directions
 config%pdims = pdims
 ! gdims = [nx, ny, nz]
-! config%gdims = gdims
 halo = [halo_ext, halo_ext, halo_ext] ! no halo along x neeed because is periodic and in physical space i have x-pencil
 ! for transpositions
 config%transpose_comm_backend = comm_backend
@@ -110,13 +109,13 @@ if (comm_backend == 0) then
    options%autotune_transpose_backend = .true.
    options%autotune_halo_backend = .false.
 endif
-options%transpose_use_inplace_buffers = .false.
-options%transpose_input_halo_extents(:, 1) = 0
-options%transpose_output_halo_extents(:, 4) = 0
+options%transpose_use_inplace_buffers = .true.
+options%transpose_input_halo_extents(:, 1) = halo
+options%transpose_output_halo_extents(:, 4) = halo
 CHECK_CUDECOMP_EXIT(cudecompGridDescCreate(handle, grid_descD2Z, config, options))
+
 ! create physical grid descriptor
 ! take previous config and modify the global grid (nx instead of nx/2+1)
-! reset transpose_comm_backend to default value to avoid picking up possible nvshmem
 ! transpose backend selection (this impacts how workspaces are allocated)
 gdims = [nx, ny, nz]
 config%gdims = gdims
@@ -131,6 +130,7 @@ options%halo_extents(:) = halo
 options%halo_periods(:) = halo_periods
 options%halo_axis = 1
 CHECK_CUDECOMP_EXIT(cudecompGridDescCreate(handle, grid_desc, config, options))
+
 ! Get pencil info for the grid descriptor in the physical space pencil struct (piX, piY or piZ)
 CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_desc, piX, 1, halo))
 nElemX = piX%size !<- number of total elments in x-configuratiion (including halo)
@@ -142,9 +142,9 @@ nElemZ = piZ%size
 CHECK_CUDECOMP_EXIT(cudecompGetTransposeWorkspaceSize(handle, grid_desc, nElemWork))
 CHECK_CUDECOMP_EXIT(cudecompGetHaloWorkspaceSize(handle, grid_desc, 1, halo, nElemWork_halo))
 ! Get pencil info for the grid descriptor in the complex space 
-CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_descD2Z, piX_d2z, 1,halo))
+CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_descD2Z, piX_d2z,1,[0, halo_ext, halo_ext]))
 nElemX_d2z = piX_d2z%size !<- number of total elments in x-configuratiion (include halo)
-CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_descD2Z, piY_d2z, 2))
+CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_descD2Z, piY_d2z,2))
 nElemY_d2z = piY_d2z%size
 CHECK_CUDECOMP_EXIT(cudecompGetPencilInfo(handle, grid_descD2Z, piZ_d2z, 3))
 nElemZ_d2z = piZ_d2z%size
@@ -157,13 +157,13 @@ CHECK_CUDECOMP_EXIT(cudecompGetHaloWorkspaceSize(handle, grid_descD2Z, 1, halo, 
 ! CUFFT initialization -- Create Plans (along x anf y only, z not required)
 ! Forward 1D FFT in X: D2Z
 batchSize = piX_d2z%shape(2)*piX_d2z%shape(3) !<- number of FFT (from x-pencil dimension)
-!status = cufftPlan1D(planXf, nx, CUFFT_D2Z, batchSize)
-status = cufftPlanMany(planXf,1,[nx],[nx+2],1,nx+2,[nx/2+1],1,nx/2+1,CUFFT_D2Z, batchSize)
+status = cufftPlan1D(planXf, nx, CUFFT_D2Z, batchSize)
+!status = cufftPlanMany(planXf,1,[nx],[nx+2],1,nx+2,[nx/2+1],1,nx/2+1,CUFFT_D2Z, batchSize)
 if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating X plan Forward'
 ! Backward 1D FFT in X: Z2D
 batchSize = piX_d2z%shape(2)*piX_d2z%shape(3) !<- number of FFT (from x-pencil dimension)
-!status = cufftPlan1D(planXb, nx, CUFFT_Z2D, batchSize)
-status = cufftPlanMany(planXb,1,[nx],[nx/2+1],1,nx/2+1,[nx+2],1,nx+2,CUFFT_Z2D, batchSize)
+status = cufftPlan1D(planXb, nx, CUFFT_Z2D, batchSize)
+!status = cufftPlanMany(planXb,1,[nx],[nx/2+1],1,nx/2+1,[nx+2],1,nx+2,CUFFT_Z2D, batchSize)
 if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating X plan Backward'
 ! it's always 2 and 3 because y-pencil have coordinates y,z,x
 batchSize = piY_d2z%shape(2)*piY_d2z%shape(3)
@@ -807,18 +807,19 @@ do t=tstart,tfin
             rhsp(i,j,k) =                    (rho*dxi/dt)*(u(ip,j,k)-u(i,j,k))
             rhsp(i,j,k) = rhsp(i,j,k) +      (rho*dyi/dt)*(v(i,jp,k)-v(i,j,k))
             rhsp(i,j,k) = rhsp(i,j,k) + (rho*dzci(kg)/dt)*(w(i,j,kp)-w(i,j,k))
+            rhspp(i-halo_ext,j,k)=rhsp(i,j,k)
          enddo
       enddo
    enddo
    !$acc end kernels
    call nvtxEndRange
 
-
+   call writefield(t,6)
 
    call nvtxStartRange("FFT forward w/ transpositions")
 
-   !$acc host_data use_device(rhsp)
-   status = cufftExecD2Z(planXf, c_loc(rhsp(2,1,1)), psi_d)
+   !$acc host_data use_device(rhspp)
+   status = cufftExecD2Z(planXf, rhspp, psi_d)
    if (status /= CUFFT_SUCCESS) write(*,*) 'X forward error: ', status
    !$acc end host_data
    ! psi(kx,y,z) -> psi(y,z,kx)
@@ -905,9 +906,9 @@ do t=tstart,tfin
    if (status /= CUFFT_SUCCESS) write(*,*) 'Y inverse error: ', status
    ! psi(y,z,kx) -> psi(kx,y,z)
    CHECK_CUDECOMP_EXIT(cudecompTransposeYToX(handle, grid_descD2Z, psi_d, psi_d, work_d_d2z, CUDECOMP_DOUBLE_COMPLEX,[0,0,0], piX_d2z%halo_extents))
-   !$acc host_data use_device(p)
    ! psi(kx,y,z) -> p(x,y,z)
-   status = cufftExecZ2D(planXb, psi_d, p)
+   !$acc host_data use_device(pp)
+   status = cufftExecZ2D(planXb, psi_d, pp)
    if (status /= CUFFT_SUCCESS) write(*,*) 'X inverse error: ', status
    !$acc end host_data
 
@@ -916,7 +917,7 @@ do t=tstart,tfin
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
          do i=1+halo_ext, piX%shape(1)-halo_ext
-            p(i,j,k) = p(i,j,k)/nx/ny
+            p(i+halo_ext,j,k) = pp(i,j,k)/nx/ny
          end do
       end do
    end do
