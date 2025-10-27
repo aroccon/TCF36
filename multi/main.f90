@@ -58,7 +58,6 @@ double precision, parameter :: beta(3)  = (/ 0.d0,       -17.d0/60.d0,  -5.d0/12
 ! Enable or disable temperature field
 #define thetaflag 0
 
-
 !########################################################################################################################################
 ! 1. INITIALIZATION OF MPI AND cuDECOMP AUTOTUNING : START
 !########################################################################################################################################
@@ -67,7 +66,6 @@ double precision, parameter :: beta(3)  = (/ 0.d0,       -17.d0/60.d0,  -5.d0/12
 call mpi_init(ierr)
 call mpi_comm_rank(MPI_COMM_WORLD, rank, ierr)
 call mpi_comm_size(MPI_COMM_WORLD, ranks, ierr)
-
 call mpi_comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, 0, MPI_INFO_NULL, localComm, ierr)
 call mpi_comm_rank(localComm, localRank, ierr)
 ierr = cudaSetDevice(localRank) !assign GPU to MPI rank
@@ -75,24 +73,19 @@ ierr = cudaSetDevice(localRank) !assign GPU to MPI rank
 ! Define grid and decomposition
 call readinput
 
-! hard coded
+! domain decomposition (pencils in y and z) 
 pr = 0
 pc = 0
 halo_ext=1
-! comm_backend = CUDECOMP_TRANSPOSE_COMM_MPI_P2P
 
 ! CuDECOMP initialization and settings 
 comm_backend = 0 ! Enable full autotuning
 CHECK_CUDECOMP_EXIT(cudecompInit(handle, MPI_COMM_WORLD))
 ! config is a struct and pr and pc are the number of pencils along the two directions
-! gdims is the global grid
 ! create an uninitialized configuration struct and initialize it to defaults using cudecompGridDescConfigSetDefaults. 
-! Initializing to default values is required to ensure no entries are left uninitialized.
-CHECK_CUDECOMP_EXIT(cudecompGridDescConfigSetDefaults(config))
+CHECK_CUDECOMP_EXIT(cudecompGridDescConfigSetDefaults(config)) ! Initializing to default values is required to ensure no entries are left uninitialized.
 pdims = [pr, pc] !pr and pc are the number of pencil along the different directions
 config%pdims = pdims
-! gdims = [nx, ny, nz]
-! config%gdims = gdims
 halo = [0, halo_ext, halo_ext] ! no halo along x neeed because is periodic and in physical space i have x-pencil
 ! for transpositions
 config%transpose_comm_backend = comm_backend
@@ -179,18 +172,10 @@ if (status /= CUFFT_SUCCESS) write(*,*) rank, ': Error in creating Y plan Forwar
 !########################################################################################################################################
 ! START STEP 2: ALLOCATE ARRAYS
 !########################################################################################################################################
-! allocate arrays
-!allocate(psi(max(nElemX, nElemY, nElemZ))) !largest among the pencil (debug only)
-!allocate(psi_real(max(nElemX, nElemY, nElemZ))) !largest among the pencil (debug only)
-allocate(psi_d(max(nElemX_d2z, nElemY_d2z, nElemZ_d2z))) ! phi on device
-!allocate(ua(nx, piX%shape(2), piX%shape(3))) (debug only)
-#if impdiff == 1
-allocate(vel_d(max(nElemX, nElemY, nElemZ))) !for implicit diffusion
-#endif
 ! Pressure variable
 allocate(rhsp(piX%shape(1), piX%shape(2), piX%shape(3))) 
 allocate(p(piX%shape(1), piX%shape(2), piX%shape(3))) 
-!allocate variables
+allocate(psi_d(max(nElemX_d2z, nElemY_d2z, nElemZ_d2z))) 
 !NS variables
 allocate(u(piX%shape(1),piX%shape(2),piX%shape(3)),v(piX%shape(1),piX%shape(2),piX%shape(3)),w(piX%shape(1),piX%shape(2),piX%shape(3))) !velocity vector
 ! allocate(ustar(piX%shape(1),piX%shape(2),piX%shape(3)),vstar(piX%shape(1),piX%shape(2),piX%shape(3)),wstar(piX%shape(1),piX%shape(2),piX%shape(3))) ! provisional velocity field
@@ -212,13 +197,12 @@ allocate(fxst(piX%shape(1),piX%shape(2),piX%shape(3)),fyst(piX%shape(1),piX%shap
 allocate(theta(piX%shape(1),piX%shape(2),piX%shape(3)),rhstheta(piX%shape(1),piX%shape(2),piX%shape(3)))
 allocate(rhstheta_o(piX%shape(1),piX%shape(2),piX%shape(3)))
 #endif
-
 ! allocate arrays for transpositions and halo exchanges 
 CHECK_CUDECOMP_EXIT(cudecompMalloc(handle, grid_desc, work_d, nElemWork))
 CHECK_CUDECOMP_EXIT(cudecompMalloc(handle, grid_desc, work_halo_d, nElemWork_halo))
 ! allocate arrays for transpositions
 CHECK_CUDECOMP_EXIT(cudecompMalloc(handle, grid_descD2Z, work_d_d2z, nElemWork_d2z))
-CHECK_CUDECOMP_EXIT(cudecompMalloc(handle, grid_descD2Z, work_halo_d_d2z, nElemWork_halo_d2z))
+CHECK_CUDECOMP_EXIT(cudecompMalloc(handle, grid_descD2Z, work_halo_d_d2z, nElemWork_halo_d2z)) ! not required 
 !########################################################################################################################################
 ! END STEP2: ALLOCATE ARRAYS
 !########################################################################################################################################
@@ -451,30 +435,25 @@ do t=tstart,tfin
                         + gamma*(eps*(phi(ip,j,k)-2.d0*phi(i,j,k)+phi(im,j,k))*ddxi + &                   
                                  eps*(phi(i,jp,k)-2.d0*phi(i,j,k)+phi(i,jm,k))*ddyi + &                   
                                  eps*((phi(i,j,kp)-phi(i,j,k))*dzi(kg+1) - (phi(i,j,k) -phi(i,j,km))*dzi(kg))*dzci(kg))     ! first between centers and then betwenn faces                
-            ! 4.1.3. Compute normals for sharpening term (gradient)
+            ! Compute normals for sharpening term (gradient)
             normx(i,j,k) = 0.5d0*(psidi(ip,j,k) - psidi(im,j,k))*dxi
             normy(i,j,k) = 0.5d0*(psidi(i,jp,k) - psidi(i,jm,k))*dyi
-            normz(i,j,k) = 0.5d0*(psidi(i,j,kp) - psidi(i,j,km))*dzi(kg+1) ! center to center
+            normz(i,j,k) =       (psidi(i,j,kp) - psidi(i,j,km))/(z(kg+1)-z(kg-1))
          enddo
       enddo
    enddo
 
    ! Update normx,normy and normz halos, required to then compute normal derivative
-   !$acc host_data use_device(normx)
+   !$acc host_data use_device(normx,normy,normz)
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, normx, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, normx, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
-   !$acc end host_data 
-   !$acc host_data use_device(normy)
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, normy, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, normy, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
-   !$acc end host_data 
-   !$acc host_data use_device(normz)
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, normz, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, normz, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
    !$acc end host_data 
 
    ! 4.1.3. Compute Sharpening term (gradient)
-   ! Substep 2: Compute normals (1.e-16 is a numerical tollerance to avodi 0/0)
    !$acc kernels
    do k=1, piX%shape(3)
       do j=1, piX%shape(2)
@@ -493,28 +472,28 @@ do t=tstart,tfin
    !$acc kernels
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
-            do i=1,nx
-               ip=i+1
-               jp=j+1
-               kp=k+1
-               im=i-1
-               jm=j-1
-               km=k-1
-               kg=piX%lo(3) + k - 1 - halo_ext
-               if (ip .gt. nx) ip=1
-               if (im .lt. 1) im=nx
-               rhsphi(i,j,k)=rhsphi(i,j,k)-gamma*((0.25d0*(1.d0-tanh_psi(ip,j,k)*tanh_psi(ip,j,k))*normx(ip,j,k) - &
-                                                      0.25d0*(1.d0-tanh_psi(im,j,k)*tanh_psi(im,j,k))*normx(im,j,k))*0.5*dxi + &
-                                                     (0.25d0*(1.d0-tanh_psi(i,jp,k)*tanh_psi(i,jp,k))*normy(i,jp,k) - &
-                                                      0.25d0*(1.d0-tanh_psi(i,jm,k)*tanh_psi(i,jm,k))*normy(i,jm,k))*0.5*dyi + &
-                                                     (0.25d0*(1.d0-tanh_psi(i,j,kp)*tanh_psi(i,j,kp))*normz(i,j,kp) - &
-                                                      0.25d0*(1.d0-tanh_psi(i,j,km)*tanh_psi(i,j,km))*normz(i,j,km))/(z(kg+1)-z(kg-1))) 
-            enddo
-        enddo
-    enddo
+         do i=1,nx
+            ip=i+1
+            jp=j+1
+            kp=k+1
+            im=i-1
+            jm=j-1
+            km=k-1
+            kg=piX%lo(3) + k - 1 - halo_ext
+            if (ip .gt. nx) ip=1
+            if (im .lt. 1) im=nx
+            rhsphi(i,j,k)=rhsphi(i,j,k)-gamma*((0.25d0*(1.d0-tanh_psi(ip,j,k)*tanh_psi(ip,j,k))*normx(ip,j,k) - &
+                                                0.25d0*(1.d0-tanh_psi(im,j,k)*tanh_psi(im,j,k))*normx(im,j,k))*0.5*dxi + &
+                                               (0.25d0*(1.d0-tanh_psi(i,jp,k)*tanh_psi(i,jp,k))*normy(i,jp,k) - &
+                                                0.25d0*(1.d0-tanh_psi(i,jm,k)*tanh_psi(i,jm,k))*normy(i,jm,k))*0.5*dyi + &
+                                               (0.25d0*(1.d0-tanh_psi(i,j,kp)*tanh_psi(i,j,kp))*normz(i,j,kp) - &
+                                                0.25d0*(1.d0-tanh_psi(i,j,km)*tanh_psi(i,j,km))*normz(i,j,km))/(z(kg+1)-z(kg-1))) 
+         enddo
+      enddo
+   enddo
     !$acc end kernels
 
-   ! 4.2 Get phi at n+1 
+   ! Get phi at n+1 
    !$acc kernels
    do k=1+halo_ext, piX%shape(3)-halo_ext
       do j=1+halo_ext, piX%shape(2)-halo_ext
@@ -524,6 +503,7 @@ do t=tstart,tfin
       enddo
    enddo
    !$acc end kernels
+
    !$acc host_data use_device(phi)
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, phi, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
    CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, phi, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
