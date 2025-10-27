@@ -561,7 +561,6 @@ do t=tstart,tfin
       CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, theta, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 2))
       CHECK_CUDECOMP_EXIT(cudecompUpdateHalosX(handle, grid_desc, theta, work_halo_d, CUDECOMP_DOUBLE, piX%halo_extents, halo_periods, 3))
       !$acc end host_data 
-      #endif
       ! impose temperature boundary conditions, interpolated as done for the velocity (see node sketch)
       !$acc parallel loop collapse(3)
       do k=1, piX%shape(3)
