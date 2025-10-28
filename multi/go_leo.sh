@@ -25,4 +25,4 @@ echo "Using directory: $ROOT_DIR"
 export LD_LIBRARY_PATH=$ROOT_DIR:$LD_LIBRARY_PATH
 
 chmod 777 binder.sh
-mpirun -np 4 --map-by node:PE=8 --rank-by core  ./binder.sh ./tcf36
+mpirun -np 4 --map-by node:PE=8 --rank-by core  ./binder.sh ./mhit36

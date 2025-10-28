@@ -12,7 +12,7 @@ LIBS = -L$(CUDECOMP_DIR)/lib -L/usr/local/cuda/lib64 -lcudecomp_fort -lcudecomp 
 
 # Source and Object Files
 OBJS = module.f90 main.f90 readinput.f90 readwrite.f90
-EXEC = tcf36
+EXEC = mhit36
 
 $(EXEC):	$(OBJS)
 	$(LD) $(FFLAGS) $(OBJS) $(LIBS) -o $@

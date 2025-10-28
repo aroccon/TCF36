@@ -56,7 +56,7 @@ double precision, parameter :: beta(3)  = (/ 0.d0,       -17.d0/60.d0,  -5.d0/12
 ! Enable or disable phase field 
 #define phiflag 0
 ! Enable or disable temperature field
-#define thetaflag 0
+#define thetaflag 1
 
 !########################################################################################################################################
 ! 1. INITIALIZATION OF MPI AND cuDECOMP AUTOTUNING : START
@@ -245,7 +245,7 @@ if (rank.eq.0) write(*,*) "Initialize velocity field (fresh start)"
                my=2.02d0
                mz=4.d0
                !3D divergence free flow with fluctuations that satisfies the boundary conditions
-               u(i,j,k) =  20.d0*(1.d0 - ((2*z(kg) - lz)/lz)**2) !
+               u(i,j,k) =  1.d0*(1.d0 - ((2*z(kg) - lz)/lz)**2) !
                u(i,j,k) =  u(i,j,k) - amp*cos(twopi*mx*x(i)/lx)*sin(twopi*my*y(jg)/ly)*2.d0*twopi/lz*sin(twopi*z(kg)/lz)*cos(twopi*z(kg)/lz)
                u(i,j,k) =  u(i,j,k) + amp*sin(twopi*mx*x(i)/lx)*(-twopi*my/ly)*sin(2.d0*twopi*my*y(jg)/ly)*sin(twopi*z(kg)/lz)*sin(twopi*z(kg)/lz)
                v(i,j,k) = -amp*cos(twopi*my*y(jg)/ly)*(twopi*mx/lx)*cos(twopi*mx*x(i)/lx)*sin(twopi*z(kg)/lz)*sin(twopi*z(kg)/lz)
@@ -322,9 +322,10 @@ if (rank.eq.0) write(*,*) 'Initialize temperature field (fresh start)'
    if (intheta .eq. 0) then
    if (rank.eq.0) write(*,*) 'Uniform temperature field'
       do k = 1+halo_ext, piX%shape(3)-halo_ext
+         kg = piX%lo(3) + k - 1 - halo_ext
          do j = 1+halo_ext, piX%shape(2)-halo_ext
             do i = 1, piX%shape(1)
-               theta(i,j,k) = 0.0d0  ! uniform temperature
+               theta(i,j,k) = 0.d0!1.d0 - z(kg)  ! uniform temperature
             enddo
          enddo
       enddo
@@ -543,7 +544,7 @@ do t=tstart,tfin
                rhstheta(i,j,k) = rhstheta(i,j,k) + kappa*((theta(ip,j,k)-2.d0*theta(i,j,k)+theta(im,j,k))*ddxi + &
                                                           (theta(i,jp,k)-2.d0*theta(i,j,k)+theta(i,jm,k))*ddyi + &
                                                           ((theta(i,j,kp)-theta(i,j,k))*dzi(kg+1) - (theta(i,j,k) -theta(i,j,km))*dzi(kg))*dzci(kg))  
-            enddo
+               enddo
          enddo
       enddo
       !$acc parallel loop collapse(3)
@@ -671,7 +672,7 @@ do t=tstart,tfin
       !$acc end host_data 
    
       ! Interpolate force at velocity points
-      !$acc kernels
+      !$acc parallel loop collapse(3)
       do k=1+halo_ext, piX%shape(3)-halo_ext
          do j=1+halo_ext, piX%shape(2)-halo_ext
             do i=1,nx
@@ -679,9 +680,15 @@ do t=tstart,tfin
                jm=j-1
                km=k-1
                if (im .lt. 1) im=nx
+               #if thetaflag == 0 
+               ! Add surface tension force only (ACDI only)
                rhsu(i,j,k)=rhsu(i,j,k) + 0.5d0*(fxst(im,j,k)+fxst(i,j,k))*rhoi
                rhsv(i,j,k)=rhsv(i,j,k) + 0.5d0*(fyst(i,jm,k)+fyst(i,j,k))*rhoi
                rhsw(i,j,k)=rhsw(i,j,k) + 0.5d0*(fzst(i,j,km)+fzst(i,j,k))*rhoi
+               #elif thetaflag == 1
+               ! Add here also buoyancy force if temperature is active (case ACDI + temperature)
+               rhsw(i,j,k)=rhsw(i,j,k) + alphag*0.5d0*(theta(i,j,km)+theta(i,j,k))
+               #endif
                u(i,j,k) = u(i,j,k) + dt*alpha(stage)*rhsu(i,j,k) + dt*beta(stage)*rhsu_o(i,j,k)! -dt*(alpha(stage)+beta(stage))*rho*(p(i,j,k)-p(im,j,k))*dxi
                v(i,j,k) = v(i,j,k) + dt*alpha(stage)*rhsv(i,j,k) + dt*beta(stage)*rhsv_o(i,j,k)! -dt*(alpha(stage)+beta(stage))*rho*(p(i,j,k)-p(i,jm,k))*dyi
                w(i,j,k) = w(i,j,k) + dt*alpha(stage)*rhsw(i,j,k) + dt*beta(stage)*rhsw_o(i,j,k)! -dt*(alpha(stage)+beta(stage))*rho*(p(i,j,k)-p(i,j,km))*dzi
@@ -691,13 +698,17 @@ do t=tstart,tfin
             enddo
          enddo
       enddo
-      !$acc end kernels
       #else
-      ! 5.2 find u, v and w star (RK3), only in the inner nodes 
+      ! 5.2 find u, v and w star (RK3), single-phase case
       !$acc parallel loop collapse(3)
       do k=1+halo_ext, piX%shape(3)-halo_ext
          do j=1+halo_ext, piX%shape(2)-halo_ext
             do i=1,nx
+               ! Add here also buoyancy force if temperature is active (case NS + temperature)
+               #if thetaflag == 1
+               km=k-1
+               rhsw(i,j,k)=rhsw(i,j,k) + alphag*0.5d0*(theta(i,j,km)+theta(i,j,k))
+               #endif
                u(i,j,k) = u(i,j,k) + dt*alpha(stage)*rhsu(i,j,k) + dt*beta(stage)*rhsu_o(i,j,k)
                v(i,j,k) = v(i,j,k) + dt*alpha(stage)*rhsv(i,j,k) + dt*beta(stage)*rhsv_o(i,j,k)
                w(i,j,k) = w(i,j,k) + dt*alpha(stage)*rhsw(i,j,k) + dt*beta(stage)*rhsw_o(i,j,k)

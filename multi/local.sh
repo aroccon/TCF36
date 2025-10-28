@@ -12,4 +12,4 @@ cp Makefile_local Makefile
 #rm *.dat
 make clean
 make
-mpirun -np 2 ./tcf36 
+mpirun -np 2 ./mhit36 

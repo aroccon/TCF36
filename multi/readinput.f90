@@ -32,12 +32,13 @@ read(55,*) rho
 ! forcing parameters
 read(55,*) gradpx
 read(55,*) gradpy
-! temperature parameters
-read(55,*) kappa
 ! phase-field parameters
 read(55,*) radius
 read(55,*) sigma
 read(55,*) epsr   
+! temperature parameters
+read(55,*) kappa
+read(55,*) alphag
 close(55)
 
 ! compute pre-defined constants
@@ -57,13 +58,14 @@ enum=1.e-16
 
 if (rank .eq. 0) then
     !enable/disable for debug check parameters
-    write(*,*) "------------------------------------------"
-    write(*,*) "████████  ██████ ███████ ██████   ██████  "  
-    write(*,*) "   ██    ██      ██           ██ ██       "       
-    write(*,*) "   ██    ██      █████    █████  ███████  "  
-    write(*,*) "   ██    ██      ██           ██ ██    ██ " 
-    write(*,*) "   ██     ██████ ██      ██████   ██████  "
-    write(*,*) "------------------------------------------"
+    write(*,*) "----------------------------------------------"
+    write(*,*) "███    ███ ██   ██ ██ ████████ ██████   ██████"  
+    write(*,*) "████  ████ ██   ██ ██    ██         ██ ██"       
+    write(*,*) "██ ████ ██ ███████ ██    ██     █████  ███████"  
+    write(*,*) "██  ██  ██ ██   ██ ██    ██         ██ ██    ██" 
+    write(*,*) "██      ██ ██   ██ ██    ██    ██████   ██████"         
+    write(*,*) "----------------------------------------------"
+    write(*,*) "-------------Channel flow setup---------------"
     write(*,*) 'Grid:', nx, 'x', ny, 'x', nz
     write(*,*) "Restart   ", restart
     write(*,*) "Tstart    ", tstart
@@ -75,15 +77,15 @@ if (rank .eq. 0) then
     write(*,*) "Rho       ", rho
     write(*,*) "Gradpx    ", gradpx
     write(*,*) "Gradpy    ", gradpy
-    write(*,*) "Kappa     ", kappa
     write(*,*) "Radius    ", radius
     write(*,*) "Sigma     ", sigma
     write(*,*) "Eps       ", eps
-    write(*,*) "Epsi      ", epsi
+    write(*,*) "Kappa     ", kappa
+    write(*,*) "Alphag    ", alphag
     write(*,*) "Lx        ", lx
     write(*,*) "Ly        ", ly
     write(*,*) "Lz        ", lz
-    write(*,*) "Z-stretching", csi
+    write(*,*) "Z-stretch ", csi
 !    write(*,*) "dx", dx
 !    write(*,*) "dxi", dxi
 !    write(*,*) "ddxi", ddxi
@@ -93,7 +95,6 @@ if (rank .eq. 0) then
 !    write(*,*) "dz", dz
 !    write(*,*) "dzi", dzi
 !    write(*,*) "ddzi", ddzi
-    write(*,*) "rhoi", rhoi
 endif
 
 

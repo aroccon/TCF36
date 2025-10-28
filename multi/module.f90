@@ -1,7 +1,7 @@
 module param
-    integer, parameter :: nx=512
-    integer, parameter :: ny=256
-    integer, parameter :: nz=250
+    integer, parameter :: nx=200
+    integer, parameter :: ny=200
+    integer, parameter :: nz=100
     double precision :: pi, rhoi, twopi
     double precision :: lx, dx, dxi, ddxi 
     double precision :: ly, dy, dyi, ddyi
@@ -13,7 +13,7 @@ module param
     double precision :: dt,mu,rho !flow parameters
     integer :: inflow, inphi, intheta
     double precision :: radius, sigma, epsr, eps, pos, val, epsi, enum ! phase-field parameters
-    double precision :: times,timef
+    double precision :: times, timef, alphag
     double precision :: gradpx, gradpy, noise, lflow, gflow, ubulk, cflx, cfly, cflz, gcflz
     double precision :: amp, mx, my, mz ! for perturbed flow
     double precision :: kappa ! temperature parameters: thermal diffusivity, Prandtl number
