@@ -540,10 +540,9 @@ do t=tstart,tfin
                      - (v(i,jp,k)*0.5d0*(theta(i,jp,k)+theta(i,j,k)) - v(i,j,k)*0.5d0*(theta(i,j,k)+theta(i,jm,k)))*dyi &
                      - (w(i,j,kp)*0.5d0*(theta(i,j,kp)+theta(i,j,k)) - w(i,j,k)*0.5d0*(theta(i,j,k)+theta(i,j,km)))*dzci(kg)
                ! diffusive terms
-               rhstheta(i,j,k) = rhstheta(i,j,k) + kappa*( &
-                     (theta(ip,j,k)-2.d0*theta(i,j,k)+theta(im,j,k))*ddxi + &
-                     (theta(i,jp,k)-2.d0*theta(i,j,k)+theta(i,jm,k))*ddyi + &
-                     (theta(i,j,kp)-theta(i,j,k))*dzi(kg+1) - (theta(i,j,k) -theta(i,j,km))*dzi(kg))*dzci(kg)    ! first between centers and then betwenn faces                
+               rhstheta(i,j,k) = rhstheta(i,j,k) + kappa*((theta(ip,j,k)-2.d0*theta(i,j,k)+theta(im,j,k))*ddxi + &
+                                                          (theta(i,jp,k)-2.d0*theta(i,j,k)+theta(i,jm,k))*ddyi + &
+                                                          ((theta(i,j,kp)-theta(i,j,k))*dzi(kg+1) - (theta(i,j,k) -theta(i,j,km))*dzi(kg))*dzci(kg))  
             enddo
          enddo
       enddo
