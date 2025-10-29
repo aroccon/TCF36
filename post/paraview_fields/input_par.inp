@@ -1,4 +1,4 @@
-1536   		!nx
+1536   	     	!nx
 768             !ny
 576             !nz
 6.28            !lx
@@ -8,8 +8,9 @@
 60000           !start step
 60000           !end step
 10000            !frequency
-1               !out u
+0               !out u
 0               !out v
 0               !out w
 0               !out phi
+0               !out temp
 

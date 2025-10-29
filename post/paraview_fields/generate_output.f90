@@ -14,7 +14,7 @@ character(len=16) :: str4
 lf=achar(10)
 
 ! fields included
-nfields=uflag + vflag + wflag + phiflag
+nfields=uflag + vflag + wflag + phiflag + thetaflag
 
 !input??
 x_start=1
@@ -137,6 +137,20 @@ if (phiflag .eq. 1) then
         do j=y_start,y_end,dny
             do i=x_start,x_end,dnx
                 write(66) real(phi(i,j,k))
+           enddo
+        enddo
+    enddo
+endif
+
+! write theta field
+if (thetaflag .eq. 1) then
+    write(str4(1:16),'(i16)') numx*numy*numz
+    buffer = 'theta 1 '//str4//' float'//lf
+    write(66) trim(buffer)
+    do k=z_start,z_end,dnz
+        do j=y_start,y_end,dny
+            do i=x_start,x_end,dnx
+                write(66) real(theta(i,j,k))
            enddo
         enddo
     enddo
