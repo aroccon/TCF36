@@ -22,6 +22,7 @@ read(10,*) uflag
 read(10,*) vflag
 read(10,*) wflag
 read(10,*) phiflag
+read(10,*) theta flag
 
 
 allocate(x(nx))

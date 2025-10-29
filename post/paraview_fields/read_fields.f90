@@ -49,6 +49,7 @@ write(*,*) 'Reading step ',nstep,' out of ',nend,' , flow'
    read(668) phi
    close(668,status='keep')
  endif
+ !reading theta
  if (thetaflag .eq.	1) then
    namefile=trim(namedir)//'theta_'//numfile//'.dat'
    open(668,file=trim(namefile),form='unformatted',access='stream',status='old',convert='little_endian')
@@ -61,7 +62,7 @@ call generate_output(nstep)
 
 !write(*,*) "max phi", maxval(phi)
 
-deallocate(u,w,w,phi,theta)
+deallocate(u,v,w,phi,theta)
 
 return
 end
