@@ -39,7 +39,7 @@ do j=1,ny-1
   y(j+1)=y(j)+dy
 enddo
 do k = 1, nz
-  zk=(dble(k)-0.5d0)/dble(nz)         
+  zk=(dble(k)-0.5d0)/dble(nz)
   z(k) = 0.5d0*dble(lz)*(1.d0+tanh(csi*(zk-0.5d0))/tanh(0.5d0*csi))
 enddo
 

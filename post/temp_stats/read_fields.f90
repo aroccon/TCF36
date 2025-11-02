@@ -17,7 +17,7 @@ allocate(theta(nx,ny,nz))
 
 write(*,*) 'Reading step ',nstep,' out of ',nend,' , flow'
   !reading theta
-  namefile=trim(namedir)//'w_'//numfile//'.dat'
+  namefile=trim(namedir)//'theta_'//numfile//'.dat'
   open(668,file=trim(namefile),form='unformatted',access='stream',status='old',convert='little_endian')
   read(668) theta
   close(668,status='keep')
@@ -35,9 +35,8 @@ flt=0.0d0
 do k=1,nz
   do i=1,nx
     do j=1,ny
-      if (k .lt. nz/2) tw=1.d0
-      if (k .gt. nz/2) tw=-1.d0
-      theta(i,j,k) = theta(i,j,k)-tw
+      if (k .le. nz/2) theta(i,j,k) = 1.d0-theta(i,j,k)
+      if (k .gt. nz/2) theta(i,j,k) = theta(i,j,k) + 1.d0
     enddo
   enddo
 enddo
@@ -51,6 +50,7 @@ do k=1,nz
   enddo
 enddo
 mean=mean/(dble(nx*ny))
+!write(*,*) "mean", mean
 
 ! rms
 do k=1,nz
@@ -98,9 +98,9 @@ write(66,'(5(a12,2x))') '% z',' mean','rms','skw','flt'
 !write(66,*)
 
 do k=1,nz
-  write(66,'(f12.5,2x,3(es12.5,2x))') z(k),mean(k),rms(k),skw(k),flt(k)
+  write(66,'(f12.5,2x,4(es12.5,2x))') z(k),mean(k),rms(k),skw(k),flt(k)
 end do
-
+close(66)
 
 deallocate(theta)
 deallocate(mean,rms,skw,flt)
