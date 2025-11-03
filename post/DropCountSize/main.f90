@@ -8,12 +8,16 @@ integer :: ii
 
 call read_input()
 
-lx = twopi
-dx = lx/(nx-1)
+lx = 6.28
+dx = lx/nx
+ly = 3.14
+dy = ly/ny
+lz = 2.00
+dz = lz/nz
 
 call print_start()
 
-allocate(phi(nx,nx,nx))
+allocate(phi(nx,ny,nz))
 
 ! create output file
 open(2,file='drop_count.dat',status='new',form='formatted')

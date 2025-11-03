@@ -3,42 +3,15 @@ subroutine read_input
  implicit none
  integer :: ios
 
- open(unit=1, file='../in_post.txt', status='old', action='read', iostat=ios)
- if (ios /= 0) then
-     print *, 'Error opening file.'
-     stop
- end if
-  
- read(1, *, iostat=ios) nx
- if (ios /= 0) then
-     print *, 'Error reading number of points nx.'
-     stop
- end if
-  
- read(1, *, iostat=ios) begin
- if (ios /= 0) then
-     print *, 'Error reading Begin.'
-     stop
- end if
-  
- read(1, *, iostat=ios) finish
- if (ios /= 0) then
-     print *, 'Error reading End.'
-     stop
- end if
-  
- read(1, *, iostat=ios) step
- if (ios /= 0) then
-     print *, 'Error reading Step.'
-     stop
- end if
 
- read(1, *, iostat=ios) rootpath
- if (ios /= 0) then
-     print *, 'Error reading Path to Results.'
-     stop
- end if
-
+nx=512
+ny=256
+nz=384
+begin=10000
+finish=200000
+step=2000
+rootpath='../../multi/output/'
+  
  ! Example for 'in_post.txt'
  !512             ! Line 1: nx
  !0               ! Line 2: Begin (first saving to be processed)
@@ -61,6 +34,10 @@ subroutine print_start()
  
  write(*,'(a,i6)') 'Grid size      : nx = ', nx
  write(*,'(a,f10.4)') 'Domain size  :  lx = ', lx
+ write(*,'(a,i6)') 'Grid size      : ny = ', ny
+ write(*,'(a,f10.4)') 'Domain size  :  ly = ', ly
+ write(*,'(a,i6)') 'Grid size      : nz = ', nz
+ write(*,'(a,f10.4)') 'Domain size  :  lz = ', lz
 
  write(*,'(a,i8,a,i8,a,i6)') 'Time steps     : from ', begin, ' to ', finish, ' with step ', step
  

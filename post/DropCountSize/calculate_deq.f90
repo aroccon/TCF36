@@ -3,7 +3,7 @@ subroutine calculate_deq(s_drop,nstep)
  use flowvars
  implicit none 
  integer :: nstep
- integer :: s_drop(nx,nx,nx)
+ integer :: s_drop(nx,ny,nz)
  character(len=clen) :: time,namefile
  !double precision :: sdrop_volume(nx,nx,nx)
  double precision :: vol,deq
@@ -30,7 +30,7 @@ subroutine calculate_deq(s_drop,nstep)
 
  ! Equivalent Diameter; twice the radius of the equivalent sphere ( Vsphere=(4/3)*pi*R^3 )
  ! The volume has to be multiplied by dx^3. Therefore I can just multiply by dx outside.
- deq=dx*(n6opi*vol)**(1.0d0/3.0d0)
+ deq=(n6opi*vol*dx*dy*dz)**(1.0d0/3.0d0)
     
  write(*,'(1x,a,E16.6)') 'Diameter',deq
  write(*,*)

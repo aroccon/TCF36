@@ -4,13 +4,13 @@ subroutine get_interface(nstep)
   implicit none
   integer :: nstep
   integer :: i,j,k,id,jd,kd
-  integer :: top(nx,nx,nx),s_drop(nx,nx,nx)
+  integer :: top(nx,ny,nz),s_drop(nx,ny,nz)
   integer :: drop_count
  
 
   ! Binarize the Phase-Field
-  do k=1,nx
-    do j=1,nx
+  do k=1,nz
+    do j=1,ny
       do i=1,nx
         if(phi(i,j,k).ge.0.5d0)then
           top(i,j,k)=1
@@ -25,8 +25,8 @@ subroutine get_interface(nstep)
   drop_count=0
 
   ! flood fill algorithm
-  do kd=1,nx
-   do jd=1,nx
+  do kd=1,nz
+   do jd=1,ny
     do id=1,nx
      if(top(id,jd,kd).gt.0)then
       drop_count=drop_count+1
@@ -38,6 +38,7 @@ subroutine get_interface(nstep)
       call flood_fill(top,s_drop,id,jd,kd)
       ! remove drops already done from top
       top=top-s_drop
+      write(*,*) "loop"
       ! new drop calculation
       ! Compute diameter
       call calculate_deq(s_drop,nstep)

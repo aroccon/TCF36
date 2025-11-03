@@ -544,6 +544,7 @@ do t=tstart,tfin
                rhstheta(i,j,k) = rhstheta(i,j,k) + kappa*((theta(ip,j,k)-2.d0*theta(i,j,k)+theta(im,j,k))*ddxi + &
                                                           (theta(i,jp,k)-2.d0*theta(i,j,k)+theta(i,jm,k))*ddyi + &
                                                           ((theta(i,j,kp)-theta(i,j,k))*dzi(kg+1) - (theta(i,j,k) -theta(i,j,km))*dzi(kg))*dzci(kg))  
+
                enddo
          enddo
       enddo

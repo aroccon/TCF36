@@ -1,7 +1,7 @@
 recursive subroutine flood_fill(top,s_drop,id,jd,kd)
  use param
  implicit none
- integer :: top(nx,nx,nx),s_drop(nx,nx,nx)
+ integer :: top(nx,ny,nz),s_drop(nx,ny,nz)
  integer :: id,jd,kd
  ! integer :: inew,jnew,knew
  integer :: idp,jdp,kdp
@@ -12,13 +12,13 @@ recursive subroutine flood_fill(top,s_drop,id,jd,kd)
 
  ! Indices increased by one (with periodicity)
  idp = mod(id, nx) + 1      ! id + 1 with periodicity
- jdp = mod(jd, nx) + 1      ! jd + 1 with periodicity
- kdp = mod(kd, nx) + 1      ! kd + 1 with periodicity
+ jdp = mod(jd, ny) + 1      ! jd + 1 with periodicity
+ kdp = mod(kd, nz) + 1      ! kd + 1 with periodicity
 
  ! Indices reduced by one (with periodicity)
  idm = mod(nx + id - 2, nx) + 1  ! id - 1 with periodicity
- jdm = mod(nx + jd - 2, nx) + 1  ! jd - 1 with periodicity
- kdm = mod(nx + kd - 2, nx) + 1  ! kd - 1 with periodicity
+ jdm = mod(ny + jd - 2, ny) + 1  ! jd - 1 with periodicity
+ kdm = mod(nz + kd - 2, nz) + 1  ! kd - 1 with periodicity
 
  ! Face-connected (search only in +-x, +-y and +-z direction 6 directions)
  !+x
@@ -36,6 +36,7 @@ recursive subroutine flood_fill(top,s_drop,id,jd,kd)
  !-z
  if((top(id,jd,kdm).eq.1).and.(s_drop(id,jd,kdm).eq.0)) call flood_fill(top,s_drop,id,jd,kdm)
 
+ !write(*,*) "edge", id,jdm,jdp,kdp,kdm
  ! Edge-Connected Combinations (12 edges)
  !    Δx | Δy | Δz
  !1   +1 | +1 | 0
@@ -97,6 +98,8 @@ recursive subroutine flood_fill(top,s_drop,id,jd,kd)
  !6 | -1 | +1 | -1
  !7 | -1 | -1 | +1
  !8 | -1 | -1 | -1
+
+! write(*,*) "corner", id,jdm,jdp,kdp,kdm
 
  !1  +1 | +1 | +1
  if ((top(idp,jdp,kdp).eq.1) .and. (s_drop(idp,jdp,kdp).eq.0)) call flood_fill(top,s_drop,idp,jdp,kdp)
